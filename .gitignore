@@ -1,0 +1,18 @@
+# Secrets — RUN_POD_API_KEY, HF_TOKEN live here
+.env
+
+# Generated workload payloads. Deliberately not committed: the base64-encoded
+# images make these hundreds of MB. They are deterministic — workloads/build.py
+# regenerates them byte-for-byte from the seed and constants in manifest.json,
+# which also records a sha256 per file. Commit the manifest, not the payload.
+workloads/images/
+workloads/*/requests.jsonl
+
+# Engine environments and logs, created on the pod
+venvs/
+logs/
+*.log
+
+__pycache__/
+*.pyc
+.DS_Store

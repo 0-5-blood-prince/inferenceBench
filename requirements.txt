@@ -1,0 +1,7 @@
+# Client-side only. Engines run from pinned container images (P0) and share
+# nothing with this environment.
+pillow>=10.0
+transformers>=4.44
+aiohttp>=3.9
+matplotlib>=3.8
+numpy>=1.26
