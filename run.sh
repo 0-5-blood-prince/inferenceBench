@@ -265,6 +265,13 @@ up() {
   fi
 
   echo $! > "$PIDFILE"
+  # Record which log this running server actually writes to. cell()'s JIT
+  # check must read this rather than guess a mode - it does not otherwise
+  # know whether the currently-running engine was started warm or cold, and
+  # guessing wrong (an earlier version hardcoded "-warm.log") means the check
+  # silently finds no file and never runs for the entire Cold workload block,
+  # exactly the workload with no preemption counter to cross-check against.
+  echo "$logfile" > "$WORKSPACE/.engine_log"
   wait_healthy "$(base_url "$engine")" "$logfile"
 }
 
@@ -375,9 +382,16 @@ cell() {
 
   # JIT contamination check (see scripts/check_jit_contamination.py): capture
   # the engine log's line count NOW, before this cell's traffic starts, so the
-  # check below only scans lines this specific run produced.
-  local logfile="logs/${engine}-warm.log" log_start=0
-  [ -f "$logfile" ] && log_start=$(wc -l < "$logfile")
+  # check below only scans lines this specific run produced. Read the actual
+  # log path from what up() just recorded - do not guess warm-vs-cold here.
+  local logfile="" log_start=0
+  [ -f "$WORKSPACE/.engine_log" ] && logfile=$(cat "$WORKSPACE/.engine_log")
+  if [ -z "$logfile" ] || [ ! -f "$logfile" ]; then
+    echo "WARNING: no engine log found (.engine_log missing or stale) - " \
+         "$run_id will get ZERO JIT-contamination coverage" >&2
+  else
+    log_start=$(wc -l < "$logfile")
+  fi
 
   curl -s "$url/metrics" > "$dir/metrics/${run_id}_pre.txt"
   "$CLIENT_PY" scripts/client.py --jsonl "$dir/requests.jsonl" --base-url "$url" \

@@ -4,7 +4,7 @@
 |---|---|
 | **Objective** | All 30 core runs, each valid or explicitly tagged |
 | **Entry** | P2 exit: frozen commit + shared rate grid |
-| **Exit** | 30/30 runs with `completed ≥ 95%` or tagged `saturated`/`jit_contaminated`; metrics + GPU-clock snapshots present for every run |
+| **Exit** | 30/30 runs with `completed ≥ 95%` or tagged `saturated`/`jit_contaminated`/`rows_exhausted`; metrics + GPU-clock snapshots present for every run |
 | **Fallback** | If behind, drop the `1.2κ` overload row first — it is excluded from pooled analysis anyway. If still behind, the late-pass replicates are the second thing to trim, not the core 18 — see [SPEC §6](../SPEC.md) |
 
 > **Amended before the matrix ran.** Run count moved from 22 to 30 and the
@@ -89,6 +89,11 @@ outside the workload it belongs to.
      run is void, not just noisy
    - `jit_contaminated` present → exclude from pooled analysis, same as
      `saturated`
+   - `rows_exhausted` present → the pre-built workload ran out of requests
+     before `min_seconds` elapsed, so the run measured less time than intended
+     ([`learnings/measurement/headroom-math.md`](../../learnings/measurement/headroom-math.md));
+     exclude and rebuild that workload with a higher `--max-rate` before
+     retrying the cell
 6. `scripts/render_readme.py <name>` — regenerate that workload's README so its
    results table includes the run just finished
 7. Append run_id, tags, and one-line status to the run log
@@ -101,7 +106,7 @@ performs steps 1–4 and 6 automatically; step 5 and 7 are the operator's.
 
 - [ ] 30 result JSONs + 60 metrics snapshots + 60 GPU-clock snapshots
       committed, each under its own workload folder
-- [ ] Every run tagged: `ok` / `saturated` / `jit_contaminated` / `void(reason)`
+- [ ] Every run tagged: `ok` / `saturated` / `jit_contaminated` / `rows_exhausted` / `void(reason)`
 - [ ] Every workload README regenerated and reflecting its final run set
 - [ ] Late-pass variance block present: 8 runs, both engines, both rates
 - [ ] Rate order within every block confirmed ascending in the run log

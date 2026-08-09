@@ -40,6 +40,13 @@ false engine asymmetry.
   per core workload, and two genuinely different saturation mechanisms
   (preemption thrashing vs raw throughput limits) visible only because
   preemption counters were added
+- [headroom-math.md](learnings/measurement/headroom-math.md) — a harness bug
+  found by a broader code review after P2 closed: `run.sh cell()` never
+  scaled request-row count to the cell's actual rate, so higher-rate P3 cells
+  would have silently measured a third of their intended duration and still
+  reported `ok`. The fix, why its margin (1.15x vs `pilot.py`'s 1.1x) is
+  deliberately approximate rather than tuned, and the `rows_exhausted`
+  assertion that catches it directly if the margin is ever insufficient
 - [p3-statistical-review.md](learnings/measurement/p3-statistical-review.md) —
   an external methodology review of the P3 design, done before any real cell
   ran: n=1 per cell with the wrong variance probe, a verified (not assumed)

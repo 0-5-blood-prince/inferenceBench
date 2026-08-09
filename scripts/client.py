@@ -20,6 +20,7 @@ import asyncio
 import json
 import random
 import statistics
+import sys
 import time
 from pathlib import Path
 
@@ -153,9 +154,31 @@ async def one_request(session, url, model, row, idx, is_warmup, results, image_t
 
 
 async def run(args) -> dict:
-    rows = load_requests(Path(args.jsonl), args.warmup + args.num_requests)
+    # _done() enforces "num_requests OR min_seconds, whichever is LONGER" - but
+    # that only works if enough rows are pre-sliced to sustain arrivals for the
+    # full min_seconds at this --rate. load_requests() used to slice exactly
+    # warmup+num_requests rows regardless of rate, so at any rate fast enough to
+    # deliver num_requests within min_seconds, the loop ran out of rows and
+    # ended early - silently, with no tag, reporting a truncated run as clean
+    # `ok`. At the real P2 grid's higher rates (e.g. 4.9 req/s) the default
+    # 250 rows arrive in ~51s against an intended 240s floor. pilot.py already
+    # solved this correctly (rate * duration * 1.1 headroom); this carries the
+    # same fix into the path every other caller (run.sh cell(), by extension
+    # the whole P3 matrix) actually exercises, rather than requiring every
+    # caller to separately remember to pass a rate-scaled --num-requests.
+    min_needed = args.warmup + args.num_requests
+    if args.concurrency != 1 and args.rate > 0:
+        min_needed = max(min_needed,
+                         args.warmup + int(args.rate * args.min_seconds * 1.15))
+    rows = load_requests(Path(args.jsonl), min_needed)
     if len(rows) < args.warmup + 1:
         raise SystemExit(f"{args.jsonl}: only {len(rows)} requests available")
+    if len(rows) < min_needed:
+        print(f"WARNING: wanted {min_needed} rows for rate {args.rate} over "
+              f"{args.min_seconds}s, only {len(rows)} available in {args.jsonl} - "
+              f"this run may end before min_seconds and understate its true "
+              f"duration. Rebuild the workload with a higher --max-rate.",
+              file=sys.stderr)
 
     url = args.base_url.rstrip("/") + "/v1/chat/completions"
     results = []
@@ -166,6 +189,14 @@ async def run(args) -> dict:
     offered = 0
     wall_start = time.perf_counter()
 
+    # Ran dry vs stopped on purpose: `rows` is a hard ceiling `_done()` cannot
+    # override. If the loop exhausts every row without `_done()` ever firing,
+    # that is exactly the silent-truncation failure the headroom above exists
+    # to prevent - and headroom is a margin, not a guarantee, so this must be
+    # asserted rather than trusted. for/else runs the else clause only when
+    # the loop completes WITHOUT break, which is precisely "ran out of rows."
+    rows_exhausted = False
+
     async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         if args.concurrency == 1:
             for idx, row in enumerate(rows):
@@ -174,6 +205,8 @@ async def run(args) -> dict:
                 await one_request(session, url, args.model, row, idx,
                                   idx < args.warmup, results, args.image_tokens)
                 offered += 1
+            else:
+                rows_exhausted = bool(rows) and not _done(len(rows), args, wall_start)
         else:
             tasks = []
             elapsed = 0.0
@@ -189,11 +222,13 @@ async def run(args) -> dict:
                     one_request(session, url, args.model, row, idx,
                                 idx < args.warmup, results, args.image_tokens)))
                 offered += 1
+            else:
+                rows_exhausted = bool(rows) and not _done(len(rows), args, wall_start)
             if tasks:
                 await asyncio.gather(*tasks)
 
     wall = time.perf_counter() - wall_start
-    return summarize(args, results, offered, wall)
+    return summarize(args, results, offered, wall, rows_exhausted)
 
 
 def _done(idx: int, args, wall_start: float) -> bool:
@@ -211,7 +246,7 @@ def stats(values):
             "p99": percentile(values, 99), "mean": statistics.fmean(values)}
 
 
-def summarize(args, results, offered, wall) -> dict:
+def summarize(args, results, offered, wall, rows_exhausted=False) -> dict:
     ok = [r for r in results if r["error"] is None and r["ttft_s"] is not None]
     ttfts = [r["ttft_s"] for r in ok]
     # ITL/TPOT: average gap between consecutive decoded tokens, pooled across
@@ -227,6 +262,12 @@ def summarize(args, results, offered, wall) -> dict:
     # comparable. Surfaced as a tag, not buried in per-request rows.
     checked = [r for r in ok if r["budget_honoured"] is not None]
     short = [r for r in checked if not r["budget_honoured"]]
+    # A successful (in `ok`) request whose usage.completion_tokens the engine
+    # simply omitted is silently excluded from the check above rather than
+    # counted - not seen on either engine so far, but worth surfacing rather
+    # than letting a run report budget_short_count=0 while a chunk of its
+    # requests were never actually verified.
+    unchecked = len(ok) - len(checked)
     cached = [r["cached_tokens"] for r in ok if r["cached_tokens"] is not None]
     prompts = [r["prompt_tokens"] for r in ok if r["prompt_tokens"]]
 
@@ -281,15 +322,21 @@ def summarize(args, results, offered, wall) -> dict:
         # SPEC section 6: below 0.95 the run measures queueing, not caching.
         "budget_honoured_count": len(checked) - len(short),
         "budget_short_count": len(short),
+        "budget_unchecked_count": unchecked,
         "cached_tokens_reported": len(cached),
         "measured_cached_fraction": (
             round(sum(cached) / sum(prompts), 4)
             if cached and prompts and sum(prompts) else None),
         # budget_unpinned is a Gate R failure - the compared runs did different
         # amounts of work, so their latencies are not comparable however clean
-        # they look.
+        # they look. rows_exhausted means the pre-built request file ran out
+        # before min_seconds elapsed - the run silently measured LESS time than
+        # intended (the headroom math is a margin, not a guarantee, so this is
+        # what actually catches it when the margin isn't enough).
+        "rows_exhausted": rows_exhausted,
         "tags": (["saturated"] if completion < 0.95 else ["ok"])
-                + (["budget_unpinned"] if short else []),
+                + (["budget_unpinned"] if short else [])
+                + (["rows_exhausted"] if rows_exhausted else []),
     }
     return {"summary": summary, "requests": results}
 
