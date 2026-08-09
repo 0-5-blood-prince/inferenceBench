@@ -36,6 +36,10 @@ false engine asymmetry.
   stopping-condition bugs in the P2 rate-sweep tool, a crash that nearly lost
   all three workloads' pilot data, and the real finding underneath it all:
   completion-ratio saturation detection fires 40-100x TTFT too late
+- [pilot-results.md](learnings/measurement/pilot-results.md) — the resulting κ
+  per core workload, and two genuinely different saturation mechanisms
+  (preemption thrashing vs raw throughput limits) visible only because
+  preemption counters were added
 - [metrics-instrumentation.md](learnings/measurement/metrics-instrumentation.md) —
   closing the gap against NVIDIA's standard LLM benchmarking metric set
   (token-counted TPS, TPS-per-user, RPS, ISL/OSL, image/text token split,

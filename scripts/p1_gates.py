@@ -52,9 +52,25 @@ COUNTER_CANDIDATES = [
 ]
 GAUGE_CANDIDATES = [
     "vllm:gpu_prefix_cache_hit_rate", "vllm:gpu_cache_usage_perc",
+    # Direct concurrency signal: how many requests are actually in flight vs
+    # queued, right now. More direct than inferring "the queue grew" from a
+    # TTFT blowup or a preemption count after the fact - this is the number
+    # itself. Confirmed present on the pinned vLLM version via a live scrape;
+    # request_queue_time_seconds (a full histogram) is also exposed but is
+    # NOT parsed here - the real matrix already captures it verbatim in its
+    # raw metrics/*.txt pre/post dumps (run.sh cell()), which is what SPEC
+    # section 6's "queue-time vs prefill-time decomposition where exposed"
+    # asks for; a curated single-value scrape doesn't need to duplicate that.
+    "vllm:num_requests_running", "vllm:num_requests_waiting",
     "sglang:cache_hit_rate", "sglang:token_usage", "sglang:full_token_usage",
     "sglang:num_used_tokens", "sglang:kv_available_tokens",
     "sglang:kv_evictable_tokens", "sglang:max_total_num_tokens",
+    # SGLang's equivalent concurrency gauges - NOT yet confirmed present on
+    # the pinned version (0.5.16 was not live when these were added; checking
+    # cost a fresh 60GB weight load, deferred). Harmless if wrong: scrape()
+    # silently omits any name that doesn't match. Verify at the next SGLang
+    # run and correct here if the real names differ.
+    "sglang:num_running_reqs", "sglang:num_queue_reqs", "sglang:num_waiting_reqs",
 ]
 
 CONFIG_ENDPOINTS = ["/get_server_info", "/v1/models", "/get_model_info", "/health"]

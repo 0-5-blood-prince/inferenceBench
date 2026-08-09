@@ -11,6 +11,7 @@
 #   ./run.sh down               stop whatever is running, wait for VRAM release
 #   ./run.sh p0                 probe image tokens, then build + verify
 #   ./run.sh p1                 the full P1 gate sequence, both engines
+#   ./run.sh rate <workload> <0.5k|0.8k|1.2k>   look up the P2 pilot rate grid
 #   ./run.sh cell <workload> <engine> <rate> <run_id>
 #
 # Pod images cannot run nested Docker, so P0's "pinned container digests" control
@@ -323,16 +324,50 @@ p1() {
   log "P1 complete - gates/ and env/ are ready for the P2 commit"
 }
 
+# P2 rate grid (SPEC section 2 / P2-freeze.md: "rate grid written into run.sh").
+# kappa found by scripts/pilot.py on vLLM (the recorded pilot engine), fixed
+# TTFT-blowup-aware version - see learnings/measurement/pilot-results.md for the
+# saturation mechanism behind each number (preemption thrashing for full-reuse
+# and partial-reuse; raw throughput limit, zero preemptions, for cold).
+# Single stream needs no grid - concurrency 1, no rate sweep (SPEC section 5).
+#   workload        kappa    0.5k    0.8k    1.2k
+#   full-reuse       4.082   2.041   3.266   4.899
+#   cold             1.260   0.630   1.008   1.512
+#   partial-reuse    2.268   1.134   1.814   2.722
+rate_for() {
+  local workload="$1" point="$2"  # point: 0.5k | 0.8k | 1.2k
+  case "$workload-$point" in
+    full-reuse-0.5k)    echo 2.041 ;;
+    full-reuse-0.8k)    echo 3.266 ;;
+    full-reuse-1.2k)    echo 4.899 ;;
+    cold-0.5k)          echo 0.630 ;;
+    cold-0.8k)          echo 1.008 ;;
+    cold-1.2k)          echo 1.512 ;;
+    partial-reuse-0.5k) echo 1.134 ;;
+    partial-reuse-0.8k) echo 1.814 ;;
+    partial-reuse-1.2k) echo 2.722 ;;
+    *) echo "FATAL: no rate grid entry for $workload/$point" >&2; exit 1 ;;
+  esac
+}
+
 cell() {
   local workload="$1" engine="$2" rate="$3" run_id="$4"
   local dir="workloads/$workload" url; url=$(base_url "$engine")
   local extra=()
   [ "$workload" = single-stream ] && extra=(--concurrency 1)
 
+  # Read lazily, not at script-parse time: manifest.json does not exist yet
+  # during bootstrap/p0, and this constant is only needed once workloads are
+  # built (SPEC section 5: fixed resolution -> fixed image-token count, used
+  # for the image/text split - see learnings/measurement/metrics-instrumentation.md).
+  local image_tokens
+  image_tokens=$("$CLIENT_PY" -c \
+    'import json;print(json.load(open("workloads/manifest.json"))["geometry"]["image_tokens"])')
+
   curl -s "$url/metrics" > "$dir/metrics/${run_id}_pre.txt"
   "$CLIENT_PY" scripts/client.py --jsonl "$dir/requests.jsonl" --base-url "$url" \
     --model "$MODEL" --run-id "$run_id" --engine "$engine" --workload "$workload" \
-    --rate "$rate" --out "$dir/results" "${extra[@]}"
+    --rate "$rate" --out "$dir/results" --image-tokens "$image_tokens" "${extra[@]}"
   curl -s "$url/metrics" > "$dir/metrics/${run_id}_post.txt"
 
   # Re-render immediately: a broken render found at 6:00 is a lost afternoon.
@@ -346,5 +381,6 @@ case "${1:-}" in
   p0)        p0 ;;
   p1)        p1 ;;
   cell)      shift; cell "$@" ;;
+  rate)      shift; rate_for "$@" ;;
   *) sed -n '2,20p' "$0"; exit 1 ;;
 esac

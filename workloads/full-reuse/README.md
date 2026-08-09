@@ -33,11 +33,19 @@ Green segments are byte-identical across every request in this workload; red seg
 
 ## Results
 
-_No runs yet._ This README was rendered before the matrix; the table fills in as each cell completes.
+| Run | Engine | Rate (req/s) | p50 TTFT (ms) | p99 TTFT (ms) | p50 ITL (ms) | Completed / offered | Cached fraction | Tag |
+|---|---|---|---|---|---|---|---|---|
+| `p2_smoke_full-reuse_vllm` | vllm | 3.266 | 266 | 421 | 68 | 200 / 200 | 85.2% | ok |
+
+p50 is primary. At 200 requests p99 is the second-worst sample and is descriptive only.
 
 ## Validity
 
 Measured cached-token fraction must sit within ±5 points of the constructed 87.5% — not near 100%, the unique tail is real.
+
+| Run | Completion ≥ 95% | Cache gate | Verdict |
+|---|---|---|---|
+| `p2_smoke_full-reuse_vllm` | yes | pass | ok |
 
 ---
 

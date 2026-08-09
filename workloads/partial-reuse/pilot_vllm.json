@@ -1,0 +1,145 @@
+{
+  "workload": "partial-reuse",
+  "engine": "vllm",
+  "kappa": 2.268,
+  "note": "complete",
+  "points": [
+    {
+      "rate": 0.5,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 0.27800655364990234,
+      "offered": 66,
+      "completed": 66,
+      "tokens_per_second": 49.977,
+      "tokens_per_second_per_user": 20.408,
+      "isl_tokens_p50": 1010,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 258,
+      "text_tokens_p50": 752,
+      "measured_cached_fraction": null,
+      "metrics_pre": {
+        "vllm:prefix_cache_hits_total": 0.0,
+        "vllm:prefix_cache_queries_total": 0.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_post": {
+        "vllm:prefix_cache_hits_total": 41312.0,
+        "vllm:prefix_cache_queries_total": 76760.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_delta": {
+        "vllm:prefix_cache_hits_total": 41312.0,
+        "vllm:prefix_cache_queries_total": 76760.0,
+        "vllm:num_preemptions_total": 0.0
+      }
+    },
+    {
+      "rate": 0.9,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 0.30361413955688477,
+      "offered": 118,
+      "completed": 118,
+      "tokens_per_second": 89.259,
+      "tokens_per_second_per_user": 18.375,
+      "isl_tokens_p50": 1010,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 258,
+      "text_tokens_p50": 752,
+      "measured_cached_fraction": null,
+      "metrics_pre": {
+        "vllm:prefix_cache_hits_total": 41312.0,
+        "vllm:prefix_cache_queries_total": 76760.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_post": {
+        "vllm:prefix_cache_hits_total": 111488.0,
+        "vllm:prefix_cache_queries_total": 206040.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_delta": {
+        "vllm:prefix_cache_hits_total": 70176.0,
+        "vllm:prefix_cache_queries_total": 129280.0,
+        "vllm:num_preemptions_total": 0.0
+      }
+    },
+    {
+      "rate": 1.62,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 0.37809398025274277,
+      "offered": 213,
+      "completed": 213,
+      "tokens_per_second": 178.814,
+      "tokens_per_second_per_user": 13.39,
+      "isl_tokens_p50": 1010,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 258,
+      "text_tokens_p50": 752,
+      "measured_cached_fraction": null,
+      "metrics_pre": {
+        "vllm:prefix_cache_hits_total": 111488.0,
+        "vllm:prefix_cache_queries_total": 206040.0,
+        "vllm:num_preemptions_total": 0.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_post": {
+        "vllm:prefix_cache_hits_total": 273056.0,
+        "vllm:prefix_cache_queries_total": 520150.0,
+        "vllm:num_preemptions_total": 6.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_delta": {
+        "vllm:prefix_cache_hits_total": 161568.0,
+        "vllm:prefix_cache_queries_total": 314110.0,
+        "vllm:num_preemptions_total": 6.0
+      }
+    },
+    {
+      "rate": 2.9160000000000004,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 30.939708210527897,
+      "offered": 384,
+      "completed": 384,
+      "tokens_per_second": 233.911,
+      "tokens_per_second_per_user": 4.334,
+      "isl_tokens_p50": 1010,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 258,
+      "text_tokens_p50": 752,
+      "measured_cached_fraction": null,
+      "metrics_pre": {
+        "vllm:prefix_cache_hits_total": 273056.0,
+        "vllm:prefix_cache_queries_total": 520150.0,
+        "vllm:num_preemptions_total": 6.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_post": {
+        "vllm:prefix_cache_hits_total": 834176.0,
+        "vllm:prefix_cache_queries_total": 1619030.0,
+        "vllm:num_preemptions_total": 84.0,
+        "vllm:num_requests_running": 0.0,
+        "vllm:num_requests_waiting": 0.0
+      },
+      "metrics_delta": {
+        "vllm:prefix_cache_hits_total": 561120.0,
+        "vllm:prefix_cache_queries_total": 1098880.0,
+        "vllm:num_preemptions_total": 78.0
+      }
+    }
+  ],
+  "rate_grid": {
+    "0.5k": 1.134,
+    "0.8k": 1.814,
+    "1.2k": 2.722
+  }
+}
