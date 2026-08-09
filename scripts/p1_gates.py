@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """P1 validation gates (see spec/phases/P1-gates.md).
 
-Proves the measurement is valid before any run is spent on it. Gate A is
-blocking; Gate B blocks only if both engines fail; Gate C decides whether the
-native harness or the P0 fallback client drives the matrix.
+Proves the measurement is valid before any run is spent on it. Gate B blocks
+only if both engines fail; Gate C decides whether the native harness or the P0
+fallback client drives the matrix.
 
-Gate A needs three different server states, so it is split into capture and
-compare. run.sh restarts the server between captures:
+    p1_gates.py config-dump --base-url ... --engine vllm
+    p1_gates.py gate-b      --base-url ... --model M --engine vllm
+    p1_gates.py gate-c      --base-url ... --model M --requests workloads/full-reuse/requests.jsonl
+
+Everything lands in gates/<engine>/ and is committed at P2.
+
+Gate A (strict cold==warm output equivalence) is NOT run by run.sh p1() and is
+no longer blocking - see spec/phases/P1-gates.md and LEARNINGS.md sections 1-4.
+Measured at a real generation length (512 tokens), both engines fail it, and it
+tests a property no latency measurement can see. capture/gate-a below are kept
+for manual investigation only. The graded replacement - divergence index at a
+stated length, informational - is scripts/gate_a_extended.py, which run.sh p1()
+does call.
 
     # server up with prefix caching DISABLED
     p1_gates.py capture --base-url ... --model M --engine vllm --label cache-off
@@ -14,12 +25,6 @@ compare. run.sh restarts the server between captures:
     p1_gates.py capture --base-url ... --model M --engine vllm --label cold
     p1_gates.py capture --base-url ... --model M --engine vllm --label warm
     p1_gates.py gate-a --engine vllm
-
-    p1_gates.py config-dump --base-url ... --engine vllm
-    p1_gates.py gate-b      --base-url ... --model M --engine vllm
-    p1_gates.py gate-c      --base-url ... --model M --requests workloads/full-reuse/requests.jsonl
-
-Everything lands in gates/<engine>/ and is committed at P2.
 """
 
 import argparse

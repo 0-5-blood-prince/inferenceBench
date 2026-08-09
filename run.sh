@@ -287,32 +287,38 @@ EOF
 }
 
 p1() {
+  # Gate A (strict output equivalence) was dropped as a blocker after P1 first
+  # ran: both engines fail it at a real generation length, it tests a property
+  # no latency measurement can see, and it manufactured a false engine
+  # asymmetry from window length alone (LEARNINGS.md sections 1-4). Gate R
+  # replaces it: reuse-by-counters is Gate B below; budget pinning is enforced
+  # per-request by the client and checked per-run (tags budget_unpinned);
+  # request-shape matching is structural (both engines read the same
+  # requests.jsonl). The old capture/gate-a sequence is replaced by one
+  # gate_a_extended.py call per engine - informational, not blocking, recording
+  # the divergence index as a graded diagnostic rather than a boolean.
   [ -f workloads/manifest.json ] || { echo "FATAL: run p0 and build first" >&2; exit 1; }
+  mkdir -p gates
   for engine in vllm sglang; do
     log "P1 gates: $engine"
     local url; url=$(base_url "$engine")
 
     up "$engine"
     "$CLIENT_PY" scripts/p1_gates.py config-dump --engine "$engine" --base-url "$url"
+    # No endpoint exposes vLLM's CUDA graph capture plan; SGLang's is on
+    # /get_server_info (already in config_dump.json). Grep the startup log for
+    # both so engine-vs-engine capture behaviour is in the P2 record either
+    # way - a decode comparison across mismatched graph strategies measures
+    # the launch strategy, not the engine (LEARNINGS.md section 7).
+    mkdir -p "gates/$engine"
+    grep -iE "Capturing CUDA graph|Graph capturing finished|cudagraph_capture_sizes|max_cudagraph_capture_size|cudagraph_mode|disabling prefill CUDA graph|Capture target.*CUDA graph" \
+      "logs/${engine}-warm.log" > "gates/$engine/cuda_graph_info.txt" 2>/dev/null || true
     "$CLIENT_PY" scripts/p1_gates.py gate-b --engine "$engine" --base-url "$url" --model "$MODEL"
     "$CLIENT_PY" scripts/p1_gates.py gate-c --engine "$engine" --base-url "$url" --model "$MODEL"
+    "$CLIENT_PY" scripts/gate_a_extended.py --base-url "$url" --engine "$engine" \
+      --model "$MODEL" --max-tokens 512 --concurrency 8 --tokenizer "$MODEL" \
+      --out "gates/$engine/gate_a_extended.json" || true
     down
-
-    # Gate A needs three cache states: one send with the cache off, then two on a
-    # freshly started server (cold, then warm) with no restart in between.
-    up cold "$engine"
-    "$CLIENT_PY" scripts/p1_gates.py capture --label cache-off --engine "$engine" \
-      --base-url "$url" --model "$MODEL"
-    down
-
-    up "$engine"
-    "$CLIENT_PY" scripts/p1_gates.py capture --label cold --engine "$engine" \
-      --base-url "$url" --model "$MODEL"
-    "$CLIENT_PY" scripts/p1_gates.py capture --label warm --engine "$engine" \
-      --base-url "$url" --model "$MODEL"
-    down
-
-    "$CLIENT_PY" scripts/p1_gates.py gate-a --engine "$engine"
   done
   log "P1 complete - gates/ and env/ are ready for the P2 commit"
 }

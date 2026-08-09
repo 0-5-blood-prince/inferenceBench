@@ -35,7 +35,11 @@ Then, exactly four bullets:
   (KV vs encoder — this may itself be the headline)
 - Mechanism for the observed Partial-reuse delta or its absence, argued from
   cached-token counters, preemption counts, and queue/prefill decomposition —
-  not vibes
+  not vibes. Check `gates/<engine>/cuda_graph_info.txt` before attributing a
+  TTFT gap to caching: SGLang auto-disables prefill CUDA graphing for this
+  multimodal model while vLLM graphs prefill-covering batches, which is a
+  plausible independent contributor to a TTFT gap and must be ruled in or out
+  ([`LEARNINGS.md`](../../LEARNINGS.md) §7)
 - What the saturated runs showed, interpreted as queueing behavior, separately
 - The H7 predictions read off gap.png — committed before any Mooncake-replay
   run — and, once day 2 lands, predicted vs observed with an honest miss
