@@ -48,7 +48,7 @@ def load_requests(path: Path, limit: int):
     return rows
 
 
-async def one_request(session, url, model, row, idx, is_warmup, results):
+async def one_request(session, url, model, row, idx, is_warmup, results, image_tokens=None):
     budget = row.get("max_tokens", 128)
     body = {
         "model": model,
@@ -117,19 +117,36 @@ async def one_request(session, url, model, row, idx, is_warmup, results):
     # "genuine cache hit" check per-request rather than per-run.
     details = (usage or {}).get("prompt_tokens_details") or {}
     completed_tokens = (usage or {}).get("completion_tokens")
+    prompt_tokens = (usage or {}).get("prompt_tokens")
+    # Image-vs-text token split. SGLang reports usage.prompt_tokens_details.
+    # image_tokens directly when --enable-cache-report is set; vLLM never
+    # populates prompt_tokens_details (confirmed None across every P1 probe).
+    # But image token count is a workload CONSTANT - fixed resolution, so fixed
+    # ViT output size (SPEC section 5; measured 258 for every resolution tried
+    # in P0's probe) - so it can be supplied once from the manifest and applied
+    # uniformly to both engines rather than depended on per-response.
+    reported_image_tokens = details.get("image_tokens")
+    image_tok = reported_image_tokens if reported_image_tokens is not None else image_tokens
+    text_tok = (prompt_tokens - image_tok
+               if prompt_tokens is not None and image_tok is not None else None)
+    dur = end - start
     results.append({
         "request_id": row.get("request_id", idx),
         "index": idx,
         "ttft_s": ttft,
         "itls_s": itls,
-        "e2e_s": end - start,
+        "e2e_s": dur,
         "output_chunks": len(token_times),
         "usage": usage,
         "completion_tokens": completed_tokens,
         "budget_honoured": (completed_tokens == row.get("max_tokens")
                             if completed_tokens is not None else None),
         "cached_tokens": details.get("cached_tokens"),
-        "prompt_tokens": (usage or {}).get("prompt_tokens"),
+        "prompt_tokens": prompt_tokens,
+        "image_tokens": image_tok,
+        "text_tokens": text_tok,
+        "tokens_per_second_this_request": (completed_tokens / dur
+                                          if completed_tokens and dur else None),
         "constructed_cacheable_fraction": row.get("constructed_cacheable_fraction"),
         "error": error,
     })
@@ -155,7 +172,7 @@ async def run(args) -> dict:
                 if _done(idx, args, wall_start):
                     break
                 await one_request(session, url, args.model, row, idx,
-                                  idx < args.warmup, results)
+                                  idx < args.warmup, results, args.image_tokens)
                 offered += 1
         else:
             tasks = []
@@ -170,7 +187,7 @@ async def run(args) -> dict:
                     await asyncio.sleep(delay)
                 tasks.append(asyncio.create_task(
                     one_request(session, url, args.model, row, idx,
-                                idx < args.warmup, results)))
+                                idx < args.warmup, results, args.image_tokens)))
                 offered += 1
             if tasks:
                 await asyncio.gather(*tasks)
@@ -187,9 +204,19 @@ def _done(idx: int, args, wall_start: float) -> bool:
     return (time.perf_counter() - wall_start) >= args.min_seconds
 
 
+def stats(values):
+    if not values:
+        return {"p50": None, "p90": None, "p99": None, "mean": None}
+    return {"p50": percentile(values, 50), "p90": percentile(values, 90),
+            "p99": percentile(values, 99), "mean": statistics.fmean(values)}
+
+
 def summarize(args, results, offered, wall) -> dict:
     ok = [r for r in results if r["error"] is None and r["ttft_s"] is not None]
     ttfts = [r["ttft_s"] for r in ok]
+    # ITL/TPOT: average gap between consecutive decoded tokens, pooled across
+    # all requests. TTFT is excluded by construction (itls_s only ever holds
+    # gaps between token 2..N, never the arrival-to-first-token gap).
     itls = [v for r in ok for v in r["itls_s"]]
     out_chunks = sum(r["output_chunks"] for r in ok)
     measured_offered = max(0, offered - args.warmup)
@@ -202,6 +229,19 @@ def summarize(args, results, offered, wall) -> dict:
     short = [r for r in checked if not r["budget_honoured"]]
     cached = [r["cached_tokens"] for r in ok if r["cached_tokens"] is not None]
     prompts = [r["prompt_tokens"] for r in ok if r["prompt_tokens"]]
+
+    # Token-counted throughput, not chunk-counted: a streamed SSE chunk is
+    # usually one token but is not guaranteed to be, so summing the engine's
+    # own usage.completion_tokens is the number that actually matches the
+    # blog's TPS = total_output_tokens / (Ty - Tx) definition.
+    completion_tokens = [r["completion_tokens"] for r in ok
+                         if r["completion_tokens"] is not None]
+    per_user_tps = [r["tokens_per_second_this_request"] for r in ok
+                    if r["tokens_per_second_this_request"] is not None]
+    isl = [r["prompt_tokens"] for r in ok if r["prompt_tokens"] is not None]
+    osl = [r["completion_tokens"] for r in ok if r["completion_tokens"] is not None]
+    image_toks = [r["image_tokens"] for r in ok if r["image_tokens"] is not None]
+    text_toks = [r["text_tokens"] for r in ok if r["text_tokens"] is not None]
 
     summary = {
         "run_id": args.run_id,
@@ -218,18 +258,26 @@ def summarize(args, results, offered, wall) -> dict:
         "failed": len(results) - len(ok),
         "completion_ratio": round(completion, 4),
         "wall_seconds": round(wall, 3),
+        # System-wide throughput: total output tokens actually generated across
+        # every concurrent request, divided by wall time.
+        "tokens_per_second": (round(sum(completion_tokens) / wall, 3)
+                             if completion_tokens and wall else None),
+        # Per-user throughput: mean of each request's own completion_tokens/e2e.
+        # Approaches 1/ITL as output length grows (NVIDIA's LLM benchmarking
+        # blog, developer.nvidia.com/blog/llm-benchmarking-fundamental-concepts).
+        "tokens_per_second_per_user": (round(statistics.fmean(per_user_tps), 3)
+                                      if per_user_tps else None),
+        "requests_per_second": round(len(ok) / wall, 3) if wall else None,
         "output_chunk_throughput": round(out_chunks / wall, 3) if wall else None,
-        "ttft_s": {
-            "p50": percentile(ttfts, 50),
-            "p90": percentile(ttfts, 90),
-            "p99": percentile(ttfts, 99),
-            "mean": statistics.fmean(ttfts) if ttfts else None,
-        },
-        "itl_s": {
-            "p50": percentile(itls, 50),
-            "p99": percentile(itls, 99),
-            "mean": statistics.fmean(itls) if itls else None,
-        },
+        "ttft_s": stats(ttfts),
+        "itl_s": stats(itls),
+        # ISL/OSL: input and output sequence length, the two quantities the
+        # blog identifies as driving TTFT (via prefill memory/compute) and ITL
+        # (via decode memory bandwidth) respectively.
+        "isl_tokens": stats(isl),
+        "osl_tokens": stats(osl),
+        "image_tokens": stats(image_toks),
+        "text_tokens": stats(text_toks),
         # SPEC section 6: below 0.95 the run measures queueing, not caching.
         "budget_honoured_count": len(checked) - len(short),
         "budget_short_count": len(short),
@@ -237,7 +285,6 @@ def summarize(args, results, offered, wall) -> dict:
         "measured_cached_fraction": (
             round(sum(cached) / sum(prompts), 4)
             if cached and prompts and sum(prompts) else None),
-        # SPEC section 6: below 0.95 the run measures queueing, not caching.
         # budget_unpinned is a Gate R failure - the compared runs did different
         # amounts of work, so their latencies are not comparable however clean
         # they look.
@@ -265,6 +312,11 @@ def main() -> None:
     p.add_argument("--warmup", type=int, default=20)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--request-timeout", type=float, default=600.0)
+    p.add_argument("--image-tokens", type=int, default=None,
+                   help="per-image token count from the P0 probe / manifest.json "
+                        "geometry.image_tokens - used as the text/image split "
+                        "fallback when the engine's own response does not report "
+                        "it (true for vLLM on every version probed so far)")
     args = p.parse_args()
 
     payload = asyncio.run(run(args))
@@ -274,7 +326,9 @@ def main() -> None:
 
     s = payload["summary"]
     print(json.dumps({k: s[k] for k in (
-        "run_id", "completed", "offered", "completion_ratio", "ttft_s", "tags")},
+        "run_id", "completed", "offered", "completion_ratio", "ttft_s", "itl_s",
+        "tokens_per_second", "tokens_per_second_per_user", "requests_per_second",
+        "isl_tokens", "osl_tokens", "tags")},
         indent=2))
     print(f"-> {out_path}")
 

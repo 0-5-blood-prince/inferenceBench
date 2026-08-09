@@ -37,12 +37,24 @@ import urllib.request
 from pathlib import Path
 
 # Semantics differ per engine; Gate B is what pins which is which, so both
-# candidates are recorded rather than assumed comparable.
+# candidates are recorded rather than assumed comparable. Split into counters
+# (monotonic - diff pre/post around a run) and gauges (point-in-time - read
+# post only, a diff is meaningless). KV-usage names confirmed present on the
+# pinned versions via P1/P2 probes on this pod: vLLM exposes gpu_cache_usage
+# as a fraction; SGLang exposes absolute used/available/evictable token counts
+# plus a redundant fraction. Preemption counters are the standard vLLM
+# saturation tell - a request evicted mid-generation to free KV for another.
 COUNTER_CANDIDATES = [
     "vllm:prefix_cache_hits_total", "vllm:prefix_cache_queries_total",
-    "vllm:gpu_prefix_cache_hit_rate", "vllm:num_preemptions_total",
+    "vllm:num_preemptions_total",
     "sglang:cached_tokens_total", "sglang:prompt_tokens_total",
-    "sglang:cache_hit_rate", "sglang:num_preemptions_total",
+    "sglang:num_preemptions_total",
+]
+GAUGE_CANDIDATES = [
+    "vllm:gpu_prefix_cache_hit_rate", "vllm:gpu_cache_usage_perc",
+    "sglang:cache_hit_rate", "sglang:token_usage", "sglang:full_token_usage",
+    "sglang:num_used_tokens", "sglang:kv_available_tokens",
+    "sglang:kv_evictable_tokens", "sglang:max_total_num_tokens",
 ]
 
 CONFIG_ENDPOINTS = ["/get_server_info", "/v1/models", "/get_model_info", "/health"]
@@ -62,14 +74,16 @@ def http_text(url: str, timeout=60.0) -> str:
 
 
 def scrape(base_url: str) -> dict:
-    """Snapshot whichever cache/preemption counters this engine exposes."""
+    """Snapshot whichever cache/preemption counters and KV/utilization gauges
+    this engine exposes. Counters are meant to be diffed pre/post a run;
+    gauges are point-in-time and should be read post-only."""
     for path in ("/metrics", "/v1/metrics"):
         try:
             text = http_text(base_url.rstrip("/") + path)
         except Exception:  # noqa: BLE001
             continue
         found = {}
-        for name in COUNTER_CANDIDATES:
+        for name in COUNTER_CANDIDATES + GAUGE_CANDIDATES:
             m = re.search(rf"^{re.escape(name)}(?:\{{[^}}]*\}})?\s+([0-9.eE+-]+)\s*$",
                           text, re.MULTILINE)
             if m:
