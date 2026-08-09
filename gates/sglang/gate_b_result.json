@@ -1,0 +1,50 @@
+{
+  "engine": "sglang",
+  "ttft1_s": 2.2474937066435814,
+  "ttft2_s": 1.7194766774773598,
+  "ratio": 0.765064067763391,
+  "reading": "partial drop - likely one cache layer only (KV without the vision tower, or the reverse). This is a finding, not a failure.",
+  "counters": {
+    "pre": {
+      "sglang:prompt_tokens_total": 275.0,
+      "sglang:cache_hit_rate": 0.0
+    },
+    "mid": {
+      "sglang:cached_tokens_total": 2.0,
+      "sglang:prompt_tokens_total": 1284.0,
+      "sglang:cache_hit_rate": 0.0
+    },
+    "post": {
+      "sglang:cached_tokens_total": 1010.0,
+      "sglang:prompt_tokens_total": 2293.0,
+      "sglang:cache_hit_rate": 0.0
+    },
+    "delta": {
+      "sglang:cached_tokens_total": 1010.0,
+      "sglang:prompt_tokens_total": 2018.0,
+      "sglang:cache_hit_rate": 0.0
+    }
+  },
+  "usage": [
+    {
+      "prompt_tokens": 1009,
+      "total_tokens": 1046,
+      "completion_tokens": 37,
+      "prompt_tokens_details": {
+        "cached_tokens": 2,
+        "image_tokens": 256
+      },
+      "reasoning_tokens": 0
+    },
+    {
+      "prompt_tokens": 1009,
+      "total_tokens": 1047,
+      "completion_tokens": 38,
+      "prompt_tokens_details": {
+        "cached_tokens": 1008,
+        "image_tokens": 256
+      },
+      "reasoning_tokens": 0
+    }
+  ]
+}

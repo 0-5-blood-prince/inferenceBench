@@ -1,0 +1,9 @@
+{
+  "engine": "vllm",
+  "checks": {
+    "custom jsonl parses": true,
+    "image sent through the chat endpoint": true,
+    "identical image replayed": true
+  },
+  "passed": true
+}

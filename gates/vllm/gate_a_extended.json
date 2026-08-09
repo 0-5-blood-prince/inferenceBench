@@ -1,0 +1,32 @@
+{
+  "engine": "vllm",
+  "max_tokens": 512,
+  "ttft_like": {
+    "cold_s": 21.6881211027503,
+    "warm_s": 21.705943554639816,
+    "ratio": 1.0008217609909626
+  },
+  "usage_cold": {
+    "prompt_tokens": 1010,
+    "total_tokens": 1522,
+    "completion_tokens": 512,
+    "prompt_tokens_details": null
+  },
+  "server_completion_tokens": 512,
+  "budget_honoured": true,
+  "cold_vs_warm": {
+    "diverges_at": null,
+    "len_cold": 464,
+    "len_warm": 464,
+    "unit": "tokens"
+  },
+  "warm_vs_warm2": {
+    "diverges_at": null
+  },
+  "concurrent": {
+    "n": 8,
+    "unique_outputs": 2,
+    "batched_vs_serial_diverges_at": null
+  },
+  "verdict": "PASS"
+}

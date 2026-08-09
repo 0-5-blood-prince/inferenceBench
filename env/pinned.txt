@@ -1,0 +1,8 @@
+model=google/gemma-4-31B-it
+vllm=0.26.0
+sglang=0.5.16
+gpu_mem_frac=0.90
+max_model_len=8192
+locked_clock_mhz=1200
+venv_dir=/root/venvs
+hf_home=/workspace/hf-cache

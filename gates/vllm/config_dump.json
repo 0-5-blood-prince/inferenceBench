@@ -1,0 +1,44 @@
+{
+  "engine": "vllm",
+  "base_url": "http://localhost:8000",
+  "endpoints": {
+    "/get_server_info": "unavailable: HTTPError",
+    "/v1/models": {
+      "object": "list",
+      "data": [
+        {
+          "id": "google/gemma-4-31B-it",
+          "object": "model",
+          "created": 1786242133,
+          "owned_by": "vllm",
+          "root": "google/gemma-4-31B-it",
+          "parent": null,
+          "max_model_len": 8192,
+          "permission": [
+            {
+              "id": "modelperm-a67f63e2cf09bea0",
+              "object": "model_permission",
+              "created": 1786242133,
+              "allow_create_engine": false,
+              "allow_sampling": true,
+              "allow_logprobs": true,
+              "allow_search_indices": false,
+              "allow_view": true,
+              "allow_fine_tuning": false,
+              "organization": "*",
+              "group": null,
+              "is_blocking": false
+            }
+          ]
+        }
+      ]
+    },
+    "/get_model_info": "unavailable: HTTPError",
+    "/health": "unavailable: JSONDecodeError"
+  },
+  "counters_at_startup": {
+    "vllm:prefix_cache_hits_total": 0.0,
+    "vllm:prefix_cache_queries_total": 0.0,
+    "vllm:num_preemptions_total": 0.0
+  }
+}

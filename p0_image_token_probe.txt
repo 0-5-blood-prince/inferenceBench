@@ -1,0 +1,26 @@
+text-only prompt_tokens: 20
+448x448: prompt_tokens=278 image_tokens=258
+896x896: prompt_tokens=278 image_tokens=258
+1344x1344: prompt_tokens=278 image_tokens=258
+
+Record the chosen row in the P0 log, then pass it to build.py:
+{
+  "text_only_prompt_tokens": 20,
+  "probe": [
+    {
+      "resolution": "448x448",
+      "prompt_tokens": 278,
+      "image_tokens": 258
+    },
+    {
+      "resolution": "896x896",
+      "prompt_tokens": 278,
+      "image_tokens": 258
+    },
+    {
+      "resolution": "1344x1344",
+      "prompt_tokens": 278,
+      "image_tokens": 258
+    }
+  ]
+}

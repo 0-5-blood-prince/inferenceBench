@@ -92,6 +92,45 @@ concurrent requests, where SGLang gave 1).
 Also checked and rejected as a fix: `--disable-chunked-prefix-cache` on SGLang
 does not restore equivalence — still diverges at the same character.
 
+## 2a. The divergence event is not reproducible run-to-run
+
+A second, independent `gate_a_extended.py` pass (this time through `run.sh
+p1()` proper, not a hand-rolled probe) gave a **different** result for SGLang's
+serial cold/warm comparison than the first pass in section 2:
+
+| | first pass (standalone probe) | second pass (`run.sh p1`) |
+|---|---|---|
+| SGLang cold vs warm, serial | diverges at token ~21 | **identical**, 512/512 |
+| SGLang batched (8x) vs serial warm | not measured | **diverges at token 21** |
+| SGLang unique outputs among 8 concurrent | not measured | 1 (self-consistent) |
+| vLLM cold vs warm, serial | diverges at token 55 | **identical** |
+| vLLM batched (8x) vs serial warm | not measured | **identical** |
+| vLLM unique outputs among 8 concurrent | not measured | 2 |
+
+Both engines' *serial* result flipped from FAIL to PASS between two otherwise
+identical runs. This is exactly what the mechanism in section 1 predicts and it
+is the strongest evidence yet that Gate A was the wrong kind of check: the
+divergence is a knife-edge numerical tie, and which side of the tie a given run
+lands on depends on incidental conditions this harness does not (and arguably
+should not try to) control — request timing, whatever else the allocator or
+scheduler is doing, exact batch composition at the moment of the fork. **A
+gate whose verdict is not reproducible across two runs of the same command
+cannot be a pre-registration blocker.**
+
+The one thing that *did* reproduce: SGLang's 8-way concurrent batch diverging
+from the serial warm run at the same token index (21) in both the standalone
+probe's earlier concurrency check and this run. Batch composition looks like
+the more stable trigger here than cold-vs-warm alone, consistent with
+batch-invariance research naming batch composition as its own axis separate
+from cache-hit-vs-fresh.
+
+One instrumentation note for whoever extends `gate_a_extended.py`: its
+`VERDICT` field is computed **only** from the serial `cold_vs_warm` check, not
+from the concurrency result. In this run that produced `VERDICT: PASS` for
+both engines despite vLLM showing 2 unique outputs among 8 identical concurrent
+requests and SGLang's batch diverging from its own serial run. Read the full
+JSON (`gates/<engine>/gate_a_extended.json`), not just the printed verdict line.
+
 ## 3. Why Gate A does not belong in a latency comparison
 
 Strict Gate A is a **within-engine** invariant: "this engine's cache is

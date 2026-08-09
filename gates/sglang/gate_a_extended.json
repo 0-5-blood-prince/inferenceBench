@@ -1,0 +1,36 @@
+{
+  "engine": "sglang",
+  "max_tokens": 512,
+  "ttft_like": {
+    "cold_s": 21.77066743373871,
+    "warm_s": 21.807095400989056,
+    "ratio": 1.001673259093283
+  },
+  "usage_cold": {
+    "prompt_tokens": 1009,
+    "total_tokens": 1521,
+    "completion_tokens": 512,
+    "prompt_tokens_details": {
+      "cached_tokens": 1008,
+      "image_tokens": 256
+    },
+    "reasoning_tokens": 0
+  },
+  "server_completion_tokens": 512,
+  "budget_honoured": true,
+  "cold_vs_warm": {
+    "diverges_at": null,
+    "len_cold": 512,
+    "len_warm": 512,
+    "unit": "tokens"
+  },
+  "warm_vs_warm2": {
+    "diverges_at": null
+  },
+  "concurrent": {
+    "n": 8,
+    "unique_outputs": 1,
+    "batched_vs_serial_diverges_at": 21
+  },
+  "verdict": "PASS"
+}

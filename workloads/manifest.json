@@ -1,0 +1,63 @@
+{
+  "seed": 0,
+  "tokenizer": "google/gemma-4-31B-it",
+  "resolution": "448x448",
+  "full_reuse_canonical": "include",
+  "geometry": {
+    "T": 991,
+    "system_tokens": 39,
+    "image_tokens": 258,
+    "shared_head_tokens": 297,
+    "canonical_tokens": 570,
+    "full_reuse_tail_tokens": 124,
+    "question_tokens": 14,
+    "E_min": 0,
+    "E_max": 495,
+    "full_reuse_cacheable_fraction": 0.8749,
+    "partial_reuse_cacheable_fraction_min": 0.2997,
+    "partial_reuse_cacheable_fraction_max": 0.7992
+  },
+  "requests_per_workload": 1940,
+  "warmup": 20,
+  "max_rate": 8.0,
+  "run_seconds": 240,
+  "workloads": {
+    "full-reuse": {
+      "name": "Full reuse",
+      "requests": "full-reuse/requests.jsonl",
+      "output_budget": 128,
+      "concurrency": null,
+      "cache_disabled": false,
+      "sha256": "52fe64ca69fdf3a9ed0e4bb39039735af18dd6790dbeeb516bb60df46d82d9ea"
+    },
+    "cold": {
+      "name": "Cold",
+      "requests": "cold/requests.jsonl",
+      "output_budget": 128,
+      "concurrency": null,
+      "cache_disabled": true,
+      "sha256": "69c067d5e24dd4f46bd707dc6725487946ca7f79533d907c80c2c3788705812c"
+    },
+    "partial-reuse": {
+      "name": "Partial reuse",
+      "requests": "partial-reuse/requests.jsonl",
+      "output_budget": 128,
+      "concurrency": null,
+      "cache_disabled": false,
+      "sha256": "ddfe73c3012e555bca1c66cc7a6747bc963f9e0883fcd4106007db62c6a557eb"
+    },
+    "single-stream": {
+      "name": "Single stream",
+      "requests": "single-stream/requests.jsonl",
+      "output_budget": 512,
+      "concurrency": 1,
+      "cache_disabled": false,
+      "sha256": "e79b322b18260d877d7948deeedadab2aafc50321b4a16481407fe7771ee0c4b"
+    }
+  },
+  "partial_reuse_observed_fraction_span": [
+    0.2997,
+    0.7992
+  ],
+  "shared_image_sha256": "b59cd886d01adc5b7bec4c22a8e33a8d643fd180c3627505fd058beb6212962b"
+}
