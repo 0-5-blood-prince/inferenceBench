@@ -253,7 +253,11 @@ up() {
     local flags=(--model-path "$MODEL" --host 0.0.0.0 --port "$SGLANG_PORT"
                  --mem-fraction-static "$GPU_MEM_FRAC"
                  --context-length "$MAX_MODEL_LEN"
-                 --enable-metrics)
+                 --enable-metrics
+                 # per-request cached_tokens in the non-streaming usage object;
+                 # sglang:cache_hit_rate is a gauge and useless post-run, so this
+                 # is the only workable per-request cache signal on this engine.
+                 --enable-cache-report)
     [ "$mode" = cold ] && flags+=(--disable-radix-cache)
     HF_TOKEN="$HF_TOKEN" nohup "$py" -m sglang.launch_server \
       "${flags[@]}" > "$logfile" 2>&1 &

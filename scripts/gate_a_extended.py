@@ -96,14 +96,24 @@ def main() -> None:
     warm2, _, _ = send(args.base_url, args.model, messages,
                        args.max_tokens, args.timeout)
 
+    # Generated length must come from the server's usage block. Re-tokenizing the
+    # decoded text client-side does NOT round-trip to the same count, and reading
+    # it that way once produced a spurious "vLLM ignored ignore_eos" conclusion
+    # (461/464 of a 512 budget) when the server had in fact emitted exactly 512.
+    served = u_cold.get("completion_tokens")
     result = {"engine": args.engine, "max_tokens": args.max_tokens,
               "ttft_like": {"cold_s": t_cold, "warm_s": t_warm,
                             "ratio": (t_warm / t_cold) if t_cold else None},
-              "usage_cold": u_cold}
+              "usage_cold": u_cold,
+              "server_completion_tokens": served,
+              "budget_honoured": (served == args.max_tokens
+                                  if served is not None else None)}
 
     print(f"=== Gate A extended [{args.engine}] max_tokens={args.max_tokens}")
     print(f"  cold {t_cold:.2f}s -> warm {t_warm:.2f}s "
           f"(ratio {t_warm / t_cold:.3f}; reuse active if < 1)")
+    print(f"  server completion_tokens={served} "
+          f"({'budget honoured' if served == args.max_tokens else 'SHORT'})")
 
     idx, la, lb, unit = divergence(cold, warm, tok)
     result["cold_vs_warm"] = {"diverges_at": idx, "len_cold": la, "len_warm": lb,

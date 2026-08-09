@@ -69,11 +69,13 @@ symmetrically on both engines:
    can bite a latency number sideways: if a divergent token happens to be a stop
    token, that run ends early and a 40-token run gets compared against a
    128-token one with the delta attributed to caching. Every timed request sends
-   `max_tokens`, `min_tokens`, `ignore_eos: true` **and** `stop_token_ids: []`
-   — `ignore_eos` alone ignores only the tokenizer's `eos_token_id`, not the
-   chat template's extra stop tokens, and vLLM was measured stopping at 461/464
-   of a 512-token budget because of exactly that. Verify `completion_tokens`
-   equals the budget on both engines before trusting any timing.
+   `max_tokens`, `min_tokens`, `ignore_eos: true` **and** `stop_token_ids: []`,
+   as defence in depth against stop tokens a chat template adds beyond the
+   tokenizer's `eos_token_id`. Do not trust the flags: **verify
+   `completion_tokens == budget` from the server's `usage` block on every run.**
+   Never infer generated length by re-tokenizing the decoded text — that does
+   not round-trip, and doing so once produced a false report that vLLM was
+   stopping short at 461/464 of a 512 budget when it had emitted exactly 512.
 3. **Matched request shape.** Same prompt, same image token geometry, same batch
    context across the runs being compared.
 
