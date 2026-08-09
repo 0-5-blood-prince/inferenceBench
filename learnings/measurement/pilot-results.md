@@ -3,14 +3,30 @@
 Produced by the fixed `scripts/pilot.py` (see
 [pilot-methodology.md](pilot-methodology.md) for the bugs that had to be fixed
 first) with the metrics instrumentation from
-[metrics-instrumentation.md](metrics-instrumentation.md), on vLLM (the
-recorded pilot engine, per SPEC's "which engine hosts the pilot is recorded").
+[metrics-instrumentation.md](metrics-instrumentation.md).
 
-| Workload | κ (req/s) | Rate grid {0.5κ, 0.8κ, 1.2κ} |
-|---|---|---|
-| Full reuse | 4.082 | 2.041 / 3.266 / 4.899 |
-| Cold | 1.26 | 0.630 / 1.008 / 1.512 |
-| Partial reuse | 2.268 | 1.134 / 1.814 / 2.722 |
+**Amended mid-P2:** originally piloted on vLLM only. Corrected to pilot both
+engines and take `κ = min(κ_vllm, κ_sglang)` per workload — piloting one
+engine and transferring its grid silently assumes the two engines saturate at
+the same rate, which is exactly what a scheduler/batching comparison exists to
+test, not presuppose. Full reasoning in
+[p3-statistical-review.md](p3-statistical-review.md) and the amendment note in
+[SPEC §6](../../spec/SPEC.md).
+
+| Workload | κ_vllm | κ_sglang | Shared κ = min | Rate grid {0.5κ, 0.8κ, 1.2κ} |
+|---|---|---|---|---|
+| Full reuse | 4.082 | 4.082 | 4.082 | 2.041 / 3.266 / 4.899 |
+| Cold | 1.26 | 1.26 | 1.26 | 0.630 / 1.008 / 1.512 |
+| Partial reuse | 2.268 | 2.268 | 2.268 | 1.134 / 1.814 / 2.722 |
+
+Every workload tied exactly — expected, not a coincidence to marvel at: see
+"κ resolution is bounded by the sweep grid" below, which explains why a tie is
+the typical outcome in this regime rather than evidence the engines perform
+identically. Because every tie already equals `min()` of itself, **the rate
+grid already written into `run.sh` from the vLLM-only pilots needed no
+numeric change** — but the verification was still the right thing to do:
+nothing before running SGLang's own sweep could have told us it would tie, and
+in a different model/workload pairing it may not.
 
 Ordering matches SPEC's own prediction (Cold ≈10x more prefill work per
 request than Full reuse → lowest knee; Full reuse cheapest per request →
@@ -42,6 +58,58 @@ prefill work of Full reuse per request, with cache disabled by flag on top)
 and is a mechanistic distinction worth carrying into the P4 writeup: a
 TTFT-vs-rate curve alone would not tell you *why* three workloads saturate
 differently, but the preemption counter does.
+
+## κ resolution is bounded by the sweep grid, not by the engine
+
+All three workloads' pilots (vLLM and SGLang, run separately per the
+shared-grid amendment above) reported **identical** κ values. Not a physical
+coincidence, and not specific to Full reuse: the sweep uses one fixed geometric ladder
+(`0.5, 0.9, 1.62, 2.916, 5.249, ...`, same for every engine), and both
+engines' completion ratio stayed a perfect 1.000 at *both* the last-healthy
+and first-collapsed rungs — which is exactly the pilot-methodology finding
+that TTFT blows up before completion ratio ever moves. With `c0 == c1 == 1.0`,
+the interpolation formula's only fallback is a straight 50/50 midpoint between
+the two bracketing rungs. That midpoint is a function of the *grid spacing*,
+not of the engine's true knee — any two engines whose real knees fall
+anywhere inside the same `[2.916, 5.249]` window report the same κ. The tool
+cannot resolve finer than one rung in this regime.
+
+What the same two points *do* still show, uncontaminated by that limitation,
+is **severity at the shared rate** — read directly off the raw TTFT, not
+through the interpolation. This held across all three workloads, same
+direction every time, SGLang worse in every case:
+
+| Workload | Rate | vLLM TTFT | SGLang TTFT | Ratio |
+|---|---|---|---|---|
+| Full reuse | 5.249 | 19.4s | 44.1s | 2.3x |
+| Cold | 1.620 | 19.1s | 51.5s | 2.7x |
+| Partial reuse | 2.916 | 30.9s | 56.9s | 1.8x |
+
+Partial reuse additionally shows the gap opening *before* the shared collapse
+point: at rate 1.62 (still completion-ratio-healthy on both), vLLM read 378ms
+and SGLang read 2.14s — already 5.7x, a full rung before either engine
+"collapsed" by the coarse definition.
+
+Same coarse collapse threshold every time, sharply different blowup once past
+it, and a consistent direction across all three workload shapes. That is
+arguably more informative than the κ numbers themselves, and it survives the
+resolution limit because it's a direct reading, not an interpolation. See
+[../infrastructure/cuda-graphs.md](../infrastructure/cuda-graphs.md) for the
+leading explanation: SGLang disables CUDA-graph capture for prefill on
+multimodal models entirely (its own log names the incompatibility), while
+vLLM graphs 51 prefill-covering buckets — checked and ruled out as an
+explanation: the attention-*kernel* backend (Triton) is identical on both
+engines, confirmed from both engines' own logs, so this is specifically about
+graph capture, not kernel choice.
+
+This does not block using `κ = min(κ_vllm, κ_sglang)` for the shared rate
+grid — both engines resolving to the same bracket means the grid is valid
+regardless of which one is nominally lower — but it does mean κ should never
+be read as "the two engines have proven-identical saturation points." A
+tighter sweep (smaller `--factor`) would narrow the bracket at the cost of
+more pilot points; not done here since SPEC already treats κ as
+rate-*selection*-only, and the grid's validity doesn't depend on the exact
+value within the bracket.
 
 ## A gauge-sampling limitation worth knowing about
 

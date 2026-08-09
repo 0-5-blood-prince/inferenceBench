@@ -1,0 +1,144 @@
+{
+  "workload": "cold",
+  "engine": "sglang",
+  "kappa": 1.26,
+  "note": "complete",
+  "points": [
+    {
+      "rate": 0.5,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 0.771689884364605,
+      "offered": 66,
+      "completed": 66,
+      "tokens_per_second": 49.761,
+      "tokens_per_second_per_user": 14.832,
+      "isl_tokens_p50": 1009,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 256,
+      "text_tokens_p50": 753,
+      "measured_cached_fraction": 0.0486,
+      "metrics_pre": {
+        "sglang:prompt_tokens_total": 275.0,
+        "sglang:cache_hit_rate": 0.0,
+        "sglang:token_usage": 0.02,
+        "sglang:full_token_usage": 0.016838508937831738,
+        "sglang:num_used_tokens": 276.0,
+        "sglang:kv_available_tokens": 16115.0,
+        "sglang:kv_evictable_tokens": 0.0,
+        "sglang:max_total_num_tokens": 16391.0,
+        "sglang:num_running_reqs": 0.0,
+        "sglang:num_queue_reqs": 0.0
+      },
+      "metrics_post": {
+        "sglang:cached_tokens_total": 3677.0,
+        "sglang:prompt_tokens_total": 76959.0,
+        "sglang:cache_hit_rate": 0.0,
+        "sglang:token_usage": 0.0,
+        "sglang:full_token_usage": 0.0,
+        "sglang:num_used_tokens": 0.0,
+        "sglang:kv_available_tokens": 406.0,
+        "sglang:kv_evictable_tokens": 15985.0,
+        "sglang:max_total_num_tokens": 16391.0,
+        "sglang:num_running_reqs": 0.0,
+        "sglang:num_queue_reqs": 0.0
+      },
+      "metrics_delta": {
+        "sglang:cached_tokens_total": 3677.0,
+        "sglang:prompt_tokens_total": 76684.0
+      }
+    },
+    {
+      "rate": 0.9,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 1.4004065617918968,
+      "offered": 118,
+      "completed": 118,
+      "tokens_per_second": 86.772,
+      "tokens_per_second_per_user": 9.427,
+      "isl_tokens_p50": 1009,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 256,
+      "text_tokens_p50": 753,
+      "measured_cached_fraction": 0.0486,
+      "metrics_pre": {
+        "sglang:cached_tokens_total": 3677.0,
+        "sglang:prompt_tokens_total": 76959.0,
+        "sglang:cache_hit_rate": 0.0,
+        "sglang:token_usage": 0.0,
+        "sglang:full_token_usage": 0.0,
+        "sglang:num_used_tokens": 0.0,
+        "sglang:kv_available_tokens": 406.0,
+        "sglang:kv_evictable_tokens": 15985.0,
+        "sglang:max_total_num_tokens": 16391.0,
+        "sglang:num_running_reqs": 0.0,
+        "sglang:num_queue_reqs": 0.0
+      },
+      "metrics_post": {
+        "sglang:cached_tokens_total": 9949.0,
+        "sglang:prompt_tokens_total": 206111.0,
+        "sglang:cache_hit_rate": 0.0,
+        "sglang:token_usage": 0.0,
+        "sglang:full_token_usage": 0.0,
+        "sglang:num_used_tokens": 0.0,
+        "sglang:kv_available_tokens": 406.0,
+        "sglang:kv_evictable_tokens": 15985.0,
+        "sglang:max_total_num_tokens": 16391.0,
+        "sglang:num_running_reqs": 0.0,
+        "sglang:num_queue_reqs": 0.0
+      },
+      "metrics_delta": {
+        "sglang:cached_tokens_total": 6272.0,
+        "sglang:prompt_tokens_total": 129152.0
+      }
+    },
+    {
+      "rate": 1.62,
+      "completion_ratio": 1.0,
+      "ttft_p50_s": 51.48791340738535,
+      "offered": 213,
+      "completed": 213,
+      "tokens_per_second": 100.368,
+      "tokens_per_second_per_user": 2.49,
+      "isl_tokens_p50": 1009,
+      "osl_tokens_p50": 128,
+      "image_tokens_p50": 256,
+      "text_tokens_p50": 753,
+      "measured_cached_fraction": 0.0486,
+      "metrics_pre": {
+        "sglang:cached_tokens_total": 9949.0,
+        "sglang:prompt_tokens_total": 206111.0,
+        "sglang:cache_hit_rate": 0.0,
+        "sglang:token_usage": 0.0,
+        "sglang:full_token_usage": 0.0,
+        "sglang:num_used_tokens": 0.0,
+        "sglang:kv_available_tokens": 406.0,
+        "sglang:kv_evictable_tokens": 15985.0,
+        "sglang:max_total_num_tokens": 16391.0,
+        "sglang:num_running_reqs": 0.0,
+        "sglang:num_queue_reqs": 0.0
+      },
+      "metrics_post": {
+        "sglang:cached_tokens_total": 20876.0,
+        "sglang:prompt_tokens_total": 431118.0,
+        "sglang:cache_hit_rate": 0.0,
+        "sglang:token_usage": 0.0,
+        "sglang:full_token_usage": 0.0,
+        "sglang:num_used_tokens": 0.0,
+        "sglang:kv_available_tokens": 406.0,
+        "sglang:kv_evictable_tokens": 15985.0,
+        "sglang:max_total_num_tokens": 16391.0,
+        "sglang:num_running_reqs": 0.0,
+        "sglang:num_queue_reqs": 0.0
+      },
+      "metrics_delta": {
+        "sglang:cached_tokens_total": 10927.0,
+        "sglang:prompt_tokens_total": 225007.0
+      }
+    }
+  ],
+  "rate_grid": {
+    "0.5k": 0.63,
+    "0.8k": 1.008,
+    "1.2k": 1.512
+  }
+}

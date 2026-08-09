@@ -309,7 +309,15 @@ def main() -> None:
                    help="0 = open loop Poisson; 1 = closed loop, for W-A")
     p.add_argument("--num-requests", type=int, default=200)
     p.add_argument("--min-seconds", type=float, default=240.0)
-    p.add_argument("--warmup", type=int, default=20)
+    p.add_argument("--warmup", type=int, default=50,
+                   help="was 20; raised after finding vLLM's own log emitting "
+                        "'Triton kernel JIT compilation during inference ... "
+                        "consider extending warmup' inside a MEASURED window "
+                        "across 10 separate run logs on this pod - 20 requests "
+                        "does not reliably touch every batch-size bucket/shape "
+                        "that triggers a distinct kernel or captured graph. "
+                        "See scripts/check_jit_contamination.py for the per-run "
+                        "assertion that now catches it if it still happens.")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--request-timeout", type=float, default=600.0)
     p.add_argument("--image-tokens", type=int, default=None,

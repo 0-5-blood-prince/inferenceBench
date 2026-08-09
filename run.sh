@@ -364,11 +364,32 @@ cell() {
   image_tokens=$("$CLIENT_PY" -c \
     'import json;print(json.load(open("workloads/manifest.json"))["geometry"]["image_tokens"])')
 
+  # GPU clocks cannot be locked from inside this container (see
+  # learnings/infrastructure/environment.md), so thermal/clock drift across a
+  # ~110+ minute matrix is a live, uncontrolled confound. Cheap insurance:
+  # record clock + temperature alongside every metrics scrape so post-hoc
+  # analysis can check whether drift correlates with rate or session time
+  # rather than only guessing from engine-order counterbalancing.
+  local gpu_query="clocks.sm,clocks.mem,temperature.gpu,power.draw"
+  nvidia-smi --query-gpu="$gpu_query" --format=csv > "$dir/metrics/${run_id}_gpu_pre.csv"
+
+  # JIT contamination check (see scripts/check_jit_contamination.py): capture
+  # the engine log's line count NOW, before this cell's traffic starts, so the
+  # check below only scans lines this specific run produced.
+  local logfile="logs/${engine}-warm.log" log_start=0
+  [ -f "$logfile" ] && log_start=$(wc -l < "$logfile")
+
   curl -s "$url/metrics" > "$dir/metrics/${run_id}_pre.txt"
   "$CLIENT_PY" scripts/client.py --jsonl "$dir/requests.jsonl" --base-url "$url" \
     --model "$MODEL" --run-id "$run_id" --engine "$engine" --workload "$workload" \
     --rate "$rate" --out "$dir/results" --image-tokens "$image_tokens" "${extra[@]}"
   curl -s "$url/metrics" > "$dir/metrics/${run_id}_post.txt"
+  nvidia-smi --query-gpu="$gpu_query" --format=csv > "$dir/metrics/${run_id}_gpu_post.csv"
+
+  if [ -f "$logfile" ]; then
+    "$CLIENT_PY" scripts/check_jit_contamination.py --log "$logfile" \
+      --since-line "$log_start" --result "$dir/results/${run_id}.json" || true
+  fi
 
   # Re-render immediately: a broken render found at 6:00 is a lost afternoon.
   "$CLIENT_PY" scripts/render_readme.py "$workload"

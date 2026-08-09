@@ -200,24 +200,78 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
 
 ## 6. Measurement contract
 
+> **Amended before the matrix ran — external methodology review, evidence
+> verified against real logs (all five claims below checked out, not just
+> plausible-sounding).** The original contract had adequate operational
+> discipline (per-run validity, restart-over-cache-clear, engine-order
+> counterbalancing) but was statistically thin exactly where it matters most:
+> the engine-to-engine deltas. Full detail and the verification trail in
+> [`../../learnings/measurement/p3-statistical-review.md`](../../learnings/measurement/p3-statistical-review.md).
+> Five fixes below, all cheap relative to the ~55 min of P3 slack.
+
 **Load generation.**
 - Open-loop Poisson arrivals. Above the saturation knee, open-loop TTFT is a
   function of run length (the queue grows without bound), so saturated runs
   measure queueing, not caching. They are kept but quarantined.
-- Rates are **per-workload**: `{0.5κ, 0.8κ, 1.2κ}` where `κ` is that workload's
-  pilot knee ([P2](phases/P2-freeze.md)). Cold does roughly an order of
-  magnitude more prefill than Full reuse — a shared rate grid would saturate one
-  workload and idle the other. The `1.2κ` point is the explicit overload probe,
-  excluded from pooled analysis.
-- Run length: 200 requests or 4 min, whichever is longer; 20-request warmup
-  discarded. Per run, verify `completed ≈ offered` (≥95%); otherwise tag
-  `saturated` and exclude from sub-knee claims.
+- Rates are **per-workload**, and — amended — **shared across engines**:
+  `κ = min(κ_vllm, κ_sglang)` per workload ([P2](phases/P2-freeze.md)), then
+  `{0.5κ, 0.8κ, 1.2κ}` applied identically to both engines. Piloting only one
+  engine and transferring its grid silently assumes the engines saturate at
+  the same rate — precisely the thing this study exists to test, not presume.
+  Cold does roughly an order of magnitude more prefill than Full reuse — a
+  shared rate grid would saturate one workload and idle the other; that
+  sharing is across *engines within a workload* only, never across workloads.
+  The `1.2κ` point is the explicit overload probe, excluded from pooled
+  analysis, and — amended — **never reported as a point estimate**: near
+  ρ→1 the queue does not converge in a finite window, so a 1.2κ latency number
+  is a property of how long you happened to run, not of the engine. 1.2κ
+  supports only ordinal/qualitative claims ("engine A degrades more
+  gracefully than B at overload"), stated as such in the P4 writeup.
+- **Rate order within a workload block is fixed, not left implicit:**
+  ascending, `0.5κ → 0.8κ → 1.2κ`, every block, both engines. Decided now so
+  that if thermal or allocator drift exists across the ~110+ minute matrix, it
+  correlates with a fixed rate-position rather than silently confounding with
+  whichever order happened to be typed at the terminal that day.
+- Run length: 200 requests or 4 min, whichever is longer; **50-request**
+  warmup discarded (was 20 — vLLM's own log was observed emitting `Triton
+  kernel JIT compilation during inference ... consider extending warmup`
+  *inside a measured window*, across ten separate run logs on the P1/P2 pod;
+  20 requests does not reliably touch every batch-size bucket or shape that
+  triggers a distinct kernel compile or graph capture). Per run, verify
+  `completed ≈ offered` (≥95%); otherwise tag `saturated` and exclude from
+  sub-knee claims. **New per-run check:** scan the engine log for a JIT/graph-
+  capture event during the measured window (`scripts/check_jit_contamination.py`);
+  tag `jit_contaminated` and exclude if found — a contaminated run must no
+  longer silently pass as `ok`.
+- **GPU clock and temperature logged alongside every metrics scrape**
+  (`clocks.sm`, `clocks.mem`, `temperature.gpu`, `power.draw`, pre and post).
+  GPU clocks cannot be locked from inside this container
+  ([P0](phases/P0-feasibility.md)), so drift across the session is a live,
+  uncontrolled possibility; logging it turns "hopefully counterbalancing
+  covers it" into something checkable post hoc.
 
 **Statistics.**
-- p50 is primary. p99 at n=200 is the second-worst sample — descriptive only.
-- **Variance cell:** duplicate Full reuse @ 0.8κ on both engines; hypothesis
-  thresholds are interpreted only if run-to-run |Δ| from the duplicate is < half
-  the threshold, else report inconclusive rather than widening post hoc.
+- p50 is primary. **A cell's p99 is reportable only with ≥500 completed
+  requests**; below that, p99 is descriptive only and must be labelled as such
+  — n=200 makes p99 the second-worst sample, effectively one order statistic,
+  not an estimate. Percentiles are computed over **completers only** at every
+  cell; at or near saturation this is a real survivorship bias (the slowest,
+  least-representative requests are exactly the ones a timeout removes from
+  the tail) — combined with the 1.2κ rule above, this is the second reason
+  1.2κ tails are never point estimates.
+- **Variance cells — amended, extended, and moved.** The single duplicate
+  (Full reuse @ 0.8κ, one repeat, n=2, one degree of freedom — not a real SD)
+  under-sampled variance at exactly the wrong operating point: latency
+  variance fans out as ρ→1, so a duplicate measured at the low-variance 0.8κ
+  point systematically underestimates variance at 1.2κ, where an interval
+  would matter most. Now: **Full reuse @ {0.8κ, 1.2κ}, both engines, each
+  cell run 3× total (n=3, 2 degrees of freedom)** — 8 additional runs. These
+  replicates run in a **separate late pass, after the rest of the core
+  matrix**, not back-to-back with the originals — back-to-back duplicates
+  measure short-term repeatability, not the session drift a ~150-minute
+  matrix actually risks. Hypothesis thresholds are interpreted only if the
+  measured spread from these replicates is < half the threshold, else report
+  inconclusive rather than widening post hoc.
 - **Ordering:** alternate which engine runs first per workload block, so drift
   (thermal, host cache) does not correlate with engine identity.
 

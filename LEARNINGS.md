@@ -40,6 +40,12 @@ false engine asymmetry.
   per core workload, and two genuinely different saturation mechanisms
   (preemption thrashing vs raw throughput limits) visible only because
   preemption counters were added
+- [p3-statistical-review.md](learnings/measurement/p3-statistical-review.md) —
+  an external methodology review of the P3 design, done before any real cell
+  ran: n=1 per cell with the wrong variance probe, a verified (not assumed)
+  warmup-too-short bug, tail-latency survivorship bias, why 1.2κ can never be
+  a point estimate, and unlogged thermal drift — all five claims checked
+  against real evidence before acting on them
 - [metrics-instrumentation.md](learnings/measurement/metrics-instrumentation.md) —
   closing the gap against NVIDIA's standard LLM benchmarking metric set
   (token-counted TPS, TPS-per-user, RPS, ISL/OSL, image/text token split,

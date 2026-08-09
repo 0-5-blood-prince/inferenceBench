@@ -94,3 +94,34 @@ cite this fact if Partial-reuse or Cold TTFT gaps show up — a lack of prefill
 graphing on SGLang is a plausible independent contributor to any TTFT gap,
 separate from caching granularity or scheduling, and needs to be ruled in or
 out before attributing a gap to the cache mechanism alone.
+
+## Attention-kernel backend checked and ruled out as an explanation
+
+When Cold's pilot showed SGLang collapsing much harder than vLLM at the same
+offered rate (see [../measurement/pilot-results.md](../measurement/pilot-results.md)),
+the first suspect was a misconfigured or accidentally-suboptimal SGLang flag —
+checked directly against both engines' own logs rather than assumed.
+
+**Both engines independently chose the identical attention kernel.** SGLang's
+log: `Use triton as default attention backend for Gemma4`. vLLM's log:
+`Using AttentionBackendEnum.TRITON_ATTN backend.` Neither was told to use
+Triton — both auto-selected it, on their own, specifically because the model
+is Gemma4. `flashinfer-python` and `flash-attn` are both installed in the
+SGLang venv (confirmed via `pip list`), so this is not a fallback from a
+missing package; it is a deliberate, model-specific choice by both engines,
+almost certainly because neither library's optimized kernels have validated
+support yet for an architecture this new. This rules out attention-backend
+choice as an explanation for the gap — it is symmetric, not a confound.
+
+**The leading explanation remains the prefill-graphing asymmetry above.**
+Cold is the cleanest test of it: zero shared image, zero cache reuse, every
+request pays full prefill cost, and its pilot showed the largest gap of the
+three core workloads (SGLang ~2.7x worse TTFT at the shared collapse rate)
+with **zero preemptions** at every point tested — ruling out KV contention as
+the cause and pointing at the prefill execution path itself, which is exactly
+what CUDA-graph capture accelerates and exactly what SGLang does not do here.
+This is consistent with, not proof of, the asymmetry being the cause — there
+is no safe way to force SGLang's prefill graph on for this model to test it
+directly (its own log names the incompatibility), so this stays a
+well-evidenced leading hypothesis for the P4 mechanism bullet, not a closed
+finding.
