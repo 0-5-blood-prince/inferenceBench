@@ -11,6 +11,7 @@
 #   ./run.sh down               stop whatever is running, wait for VRAM release
 #   ./run.sh p0                 probe image tokens, then build + verify
 #   ./run.sh p1                 the full P1 gate sequence, both engines
+#   ./run.sh p3                 the full 30-run core matrix (P3-core-matrix.md)
 #   ./run.sh rate <workload> <0.5k|0.8k|1.2k>   look up the P2 pilot rate grid
 #   ./run.sh cell <workload> <engine> <rate> <run_id>
 #
@@ -409,12 +410,95 @@ cell() {
   "$CLIENT_PY" scripts/render_readme.py "$workload"
 }
 
+# P3 core matrix (P3-core-matrix.md): 30 runs. Rate order within every block is
+# fixed ascending (0.5k -> 0.8k -> 1.2k, SPEC section 6 amendment); engine order
+# per block matches the execution-order table there exactly.
+# A single cell's failure (client.py error, transient network blip) must not
+# take down the other ~29 runs in an unattended ~3h sequence - cell() itself
+# calls no exit internally, so a plain || is enough to catch and log it here
+# without set -e aborting the whole script. Health-checked first: if the
+# engine has died between cells (rare - never observed in this session's 15+
+# real starts, but this run is unattended for ~3h), fail fast on a 5s probe
+# instead of letting client.py spend a full ~240s timing out against a dead
+# server for every remaining point in this leg.
+run_cell() {
+  local engine="$2" url; url=$(base_url "$engine")
+  if ! curl -sf --max-time 5 "$url/v1/models" >/dev/null 2>&1; then
+    echo "WARNING: $engine not responding before cell $* - SKIPPING (engine likely died)" >&2
+    return 1
+  fi
+  cell "$@" || echo "WARNING: cell $* FAILED - continuing to the next run" >&2
+}
+
+p3_block() {
+  local workload="$1" engine point rate dead; shift
+  local cold_flag=()
+  [ "$workload" = cold ] && cold_flag=(cold)
+  for engine in "$@"; do
+    up "${cold_flag[@]}" "$engine"
+    dead=0
+    if [ "$workload" = single-stream ]; then
+      run_cell single-stream "$engine" 1 "single-stream_${engine}"
+    else
+      for point in 0.5k 0.8k 1.2k; do
+        [ "$dead" = 1 ] && { echo "WARNING: skipping $workload/$engine/$point - engine dead" >&2; continue; }
+        rate=$(rate_for "$workload" "$point")
+        run_cell "$workload" "$engine" "$rate" "${workload}_${engine}_${point}" || dead=1
+      done
+    fi
+  done
+}
+
+p3() {
+  [ -f workloads/manifest.json ] || { echo "FATAL: run p0 and build first" >&2; exit 1; }
+  # Engine startup (wait_healthy) calls exit on a genuine fatal failure rather
+  # than returning an error code - by design, that case has never fired once
+  # in this session's 15+ real invocations, and it is not being loosened right
+  # before an unattended ~3h run. What the trap guarantees instead: WHATEVER
+  # path this function exits by - success, a cell failure, or that rare exit -
+  # down() still runs, so VRAM is always released and the pod is never left
+  # holding a dead server. Idempotent (down() is already safe to call when
+  # nothing is running), so it firing on the normal successful path too is
+  # harmless.
+  trap down EXIT
+
+  log "P3: Full reuse"
+  p3_block full-reuse vllm sglang
+  log "P3: Cold"
+  p3_block cold sglang vllm
+  log "P3: Partial reuse"
+  p3_block partial-reuse vllm sglang
+  log "P3: Single stream"
+  p3_block single-stream sglang vllm
+
+  # Late-pass variance block (SPEC section 6 amendment): Full reuse @
+  # {0.8k,1.2k}, both engines, run AFTER everything above - not back-to-back
+  # with the originals - so it captures session drift, not just short-term
+  # repeatability. 2 replicates per cell here join the original from the
+  # block above for n=3 total per cell.
+  log "P3: late-pass variance block"
+  local engine point rate rep dead
+  for engine in vllm sglang; do
+    up "$engine"
+    dead=0
+    for point in 0.8k 1.2k; do
+      rate=$(rate_for full-reuse "$point")
+      for rep in 1 2; do
+        [ "$dead" = 1 ] && { echo "WARNING: skipping late-pass $engine/$point/rep$rep - engine dead" >&2; continue; }
+        run_cell full-reuse "$engine" "$rate" "full-reuse_${engine}_${point}_late${rep}" || dead=1
+      done
+    done
+  done
+  log "P3 complete - 30 runs done. Review tags (ok/saturated/jit_contaminated/rows_exhausted/void) before P4."
+}
+
 case "${1:-}" in
   bootstrap) bootstrap ;;
   up)        shift; up "$@" ;;
   down)      down ;;
   p0)        p0 ;;
   p1)        p1 ;;
+  p3)        p3 ;;
   cell)      shift; cell "$@" ;;
   rate)      shift; rate_for "$@" ;;
   *) sed -n '2,20p' "$0"; exit 1 ;;
