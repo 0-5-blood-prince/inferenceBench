@@ -72,6 +72,43 @@ which engine goes first per workload block (see [P3](phases/P3-core-matrix.md)).
 
 ## 3. Hypotheses (frozen at the P2 commit)
 
+> **Amended after the real P3 matrix ran — the comparison design at `0.8κ`
+> did not survive contact with real load, and the hypotheses below must be
+> read against the corrected comparison points, not the originally intended
+> ones.** Full detail, the retag that found it, and the exact rates affected
+> in [`../learnings/measurement/ttft-growth-signal.md`](../learnings/measurement/ttft-growth-signal.md).
+> Summary: the shared grid `κ = min(κ_vllm, κ_sglang)` was meant to put
+> `0.8κ` safely sub-saturation for *both* engines. It doesn't. Measured on
+> the real matrix:
+>
+> | Workload | Clean (both engines healthy) | `0.8κ` status |
+> |---|---|---|
+> | Full reuse | **`0.5κ` only** | SGLang saturated (3 reps, 10.4–12.5s p50); vLLM clean |
+> | Partial reuse | **`0.5κ` only** | SGLang saturated; vLLM clean |
+> | Cold | **`0.5κ` only** | **Both engines saturated** |
+>
+> At `0.8κ`, a TTFT delta is no longer attributable to cache behaviour — it is
+> dominated by *which side of its own knee* each engine happens to sit on,
+> exactly the confound this design exists to exclude. **`0.8κ` is
+> reclassified from a comparison point to an asymmetric-saturation
+> observation.** `0.5κ` is the only rate where H1, H4a/H4b, and gap.png's
+> cross-engine deltas are valid for Full reuse, Partial reuse, and Cold. `1.2κ`
+> keeps its original role (explicit overload probe, ordinal-only, never a
+> point estimate — [§6](#6-measurement-contract)).
+>
+> This also promotes a second explanation to equal standing with cache
+> behaviour, not a footnote to rule out first: SGLang disables CUDA-graph
+> capture for prefill on this multimodal model, vLLM does not
+> ([`../learnings/infrastructure/cuda-graphs.md`](../learnings/infrastructure/cuda-graphs.md)).
+> If SGLang collapses at `0.8κ` on Full reuse while vLLM does not, "one engine
+> pays un-graphed prefill overhead the other doesn't" explains a TTFT gap with
+> zero reference to prefix reuse at all. Cache-effect and graph-effect are
+> **competing primary hypotheses**, adjudicated by the counters already
+> collected (cached-token fraction, preemption counts, `cuda_graph_info.txt`)
+> — not sequential checks where caching is assumed and graphs are checked only
+> if caching looks insufficient. See [P4](phases/P4-writeup.md)'s mechanism
+> bullet.
+
 | ID | Prediction | Falsified if |
 |----|-----------|--------------|
 | H1 | Full reuse: SGLang p50 TTFT ≥20% lower than vLLM | delta <20% |
@@ -113,7 +150,12 @@ different class of artifact from either alone. Procedure in
 [P6](phases/P6-last-experiment.md).
 
 A null on all eight is a valid, reportable outcome. Do not re-run with new
-settings to chase a positive.
+settings to chase a positive. **Two different nulls, not one** — force the
+distinction in the P4 template rather than laundering both into "no effect":
+*"measured at a clean comparison point, no effect found"* is a real null;
+*"no clean comparison point survived saturation"* is a different result
+entirely — itself informative about how tightly a coarse pilot sweep can
+calibrate a shared rate grid, not a statement about cache behaviour at all.
 
 ## 4. Scope
 
@@ -206,7 +248,7 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
 > discipline (per-run validity, restart-over-cache-clear, engine-order
 > counterbalancing) but was statistically thin exactly where it matters most:
 > the engine-to-engine deltas. Full detail and the verification trail in
-> [`../../learnings/measurement/p3-statistical-review.md`](../../learnings/measurement/p3-statistical-review.md).
+> [`../learnings/measurement/p3-statistical-review.md`](../learnings/measurement/p3-statistical-review.md).
 > Five fixes below, all cheap relative to the ~55 min of P3 slack.
 
 **Load generation.**
@@ -252,7 +294,7 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
   completion ratio structurally cannot see. Retagged the already-collected
   data in place (`scripts/retag_ttft_growth.py`); no cell needed re-running,
   only its classification was wrong
-  ([`learnings/measurement/ttft-growth-signal.md`](../../learnings/measurement/ttft-growth-signal.md)).
+  ([`learnings/measurement/ttft-growth-signal.md`](../learnings/measurement/ttft-growth-signal.md)).
 - **GPU clock and temperature logged alongside every metrics scrape**
   (`clocks.sm`, `clocks.mem`, `temperature.gpu`, `power.draw`, pre and post).
   GPU clocks cannot be locked from inside this container

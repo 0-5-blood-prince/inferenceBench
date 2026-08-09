@@ -85,6 +85,21 @@ python3 -m sglang.bench_serving --backend <sglang|vllm-chat> \
   cached-token fraction per trace must land near the trace's published reuse
   ratio. If Conversation does not read ≈40%, the replay reconstruction is
   broken and latencies are void.
+- **Saturation gate, amended after P3 found the real matrix's shared `0.8κ`
+  point collapsed for most workloads
+  ([SPEC §3](../SPEC.md), [`../../learnings/measurement/ttft-growth-signal.md`](../../learnings/measurement/ttft-growth-signal.md)).**
+  H7's prediction is read off gap.png at a *specific load regime* (stated in
+  the P4 prediction commit — likely `0.5κ`-equivalent, the only rate that
+  survived as clean). If the replay's preserved trace timestamps drive either
+  engine toward or past its own knee, the observation is no longer in the
+  regime the prediction assumes, and a miss is guaranteed for reasons that
+  have nothing to do with whether the cache model is right. Compute each
+  trace/slowdown/engine cell's own `ttft_growth_ratio`
+  ([`../../scripts/client.py`](../../scripts/client.py)) alongside the
+  existing cache-fraction check; a cell with `ttft_growth_ratio > 2.0` is
+  flagged saturated the same way a synthetic cell is, and the miss analysis
+  below must say so rather than reading a saturation artifact as a cache-model
+  failure.
 - Record `--mooncake-num-rounds` and all replay flags; they define the
   workload.
 - Matrix: 2 traces × 2 slowdowns × 2 engines = **8 runs**, ~2–3 h with pilots.
@@ -95,10 +110,17 @@ python3 -m sglang.bench_serving --backend <sglang|vllm-chat> \
 
 **`figures/oos.png`** — H7 predicted vs observed engine gap, four points
 (2 traces × 2 loads) against the y=x diagonal, plus a miss analysis in the
-README whichever way it lands. A synthetic benchmark that predicts a production
+README whichever way it lands. **The miss analysis must attribute any
+divergence to one of two causes, not leave it ambiguous:** a genuine
+cache-model failure (the synthetic gap-vs-fraction relationship doesn't
+transfer to real traffic), or the saturation gate above firing (the replay
+pushed a cell past its knee, so it was never testing the same regime the
+prediction was made in). A synthetic benchmark that predicts a production
 replay out of sample is a different class of artifact from either alone; a
-predicted miss, analyzed honestly, is the second-best outcome — and still
-better than 30 more benchmark runs.
+predicted miss, analyzed honestly *and correctly attributed*, is the
+second-best outcome — and still better than 30 more benchmark runs. A miss
+that turns out to be a saturation artifact, mislabeled as a cache-model
+failure, is worse than either.
 
 ## Exit checklist
 
@@ -106,5 +128,7 @@ better than 30 more benchmark runs.
       README regenerated
 - [ ] H7 prediction commit hash referenced in the Mooncake replay run log
 - [ ] Mooncake replay: 8 runs + pilots, validity gates checked per trace,
-      folder README regenerated
+      `ttft_growth_ratio` checked per cell, folder README regenerated
 - [ ] `oos.png` committed; H6/H7 verdicts filled in the top-level README
+- [ ] Every miss attributed to cache-model failure or saturation-gate firing —
+      none left ambiguous
