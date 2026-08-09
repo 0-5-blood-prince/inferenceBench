@@ -46,13 +46,52 @@
    (below) is reading off a real fitted relationship or off two points
    connected by a line that looks like one.
 
-Single stream, VisionArena replay, and the variance cell report as tables, not
-plots.
+Single stream, VisionArena replay, the variance cell, and the text-only
+control report as tables, not plots.
 
 Figures stay top-level: each spans several workloads, so it belongs to none of
 them. Per-workload results already live in each workload's generated README
 ([SPEC §8](../SPEC.md)) — the top-level README does not repeat those tables, it
 links to them and states the verdicts.
+
+## Text-only control experiment
+
+> **Added after P5 was skipped as written** ([P5](P5-stretch.md)) — this item
+> was originally P5 priority #1, run only from surplus time. P3's real
+> results gave it a job P5 never had: it is now the direct discriminator
+> between the two competing primary hypotheses in the mechanism bullet below
+> (genuine cache/scheduling difference vs. SGLang's un-graphed multimodal
+> prefill overhead). A discriminator for a possibly-headline finding deserves
+> a properly sized, designed run, not whatever surplus minutes P3 left behind
+> — so it moved here as first-class, not squeezed into P5's original 4-run/
+> 20-min budget.
+
+- **Construction:** Full reuse and Partial reuse workloads, replicated with
+  the image stripped out and prompt text padded to match each workload's
+  original total token count — same prefix-reuse structure, zero image
+  tokens, no vision-encoder path.
+- **Rate:** `0.5κ` only — the one rate that stayed clean for both engines on
+  every core workload ([SPEC §3](../SPEC.md) amendment). This experiment is
+  worthless as a discriminator if either engine is queueing.
+- **Replicates:** n≥3 per engine per workload (matches the late-pass variance
+  block's design, not the n=1 default), so a text-only gap or its absence is
+  read against the same ~20%-spread near-knee instability already found in
+  the real data, not mistaken for noise.
+- **Reading it:** if the vLLM/SGLang TTFT gap seen on Full reuse and Partial
+  reuse shrinks to noise on their text-only twins, the gap is multimodal-
+  prefill-specific — evidence for the CUDA-graph-capture asymmetry
+  ([`../../learnings/infrastructure/cuda-graphs.md`](../../learnings/infrastructure/cuda-graphs.md)).
+  If the gap persists essentially unchanged, it's a general scheduling
+  difference unrelated to images, and the cache-effect explanation regains
+  ground. Either outcome is reported in the mechanism bullet below, not left
+  as a separate orphaned finding.
+- **Cost:** 2 workloads × 2 engines × n≥3 ≈ 12 runs, ~30–40 min at `0.5κ`
+  generation lengths — larger than P5's original 4-run estimate because
+  the replicate count now matches the variance design, not surplus-time
+  economy.
+- Gets its own folder and generated README on the same terms as the core
+  four ([SPEC §8](../SPEC.md)); reports as a table here, not a figure — four
+  cells (2 workloads × 2 engines) is too sparse to plot honestly.
 
 ## Results template (fills the top-level README.md)
 
@@ -78,11 +117,12 @@ Then, exactly four bullets:
   model while vLLM graphs prefill-covering batches
   ([`../../learnings/infrastructure/cuda-graphs.md`](../../learnings/infrastructure/cuda-graphs.md)).
   Adjudicate with the counters already collected — cached-token fraction,
-  preemption counts, `gates/<engine>/cuda_graph_info.txt` — not vibes, and not
-  a default assumption that caching explains the gap unless graphs are ruled
-  out. (b) is independently interesting even if it turns out to dominate: a
-  real, publishable difference in multimodal prefill handling that has
-  nothing to do with prefix reuse.
+  preemption counts, `gates/<engine>/cuda_graph_info.txt` — plus the
+  text-only control above, whose whole purpose is to strip out (b) by
+  construction. Not vibes, and not a default assumption that caching explains
+  the gap unless graphs are ruled out. (b) is independently interesting even
+  if it turns out to dominate: a real, publishable difference in multimodal
+  prefill handling that has nothing to do with prefix reuse.
 - **What the saturated runs showed, interpreted as queueing behavior — and
   use the one real replicate set as evidence, not just an annotation.** Full
   reuse `0.8κ` has n=3 on both engines (the late-pass variance block): SGLang's
@@ -110,6 +150,29 @@ Non-negotiable ordering, the whole value of [P6](P6-last-experiment.md):
 4. Only then may any Mooncake-replay run start — prediction and observation
    live in separate commits
 
+## Future work — state verbatim in the README
+
+Two workloads from P5's original priority order are not run this cycle and
+are recorded here as dated future work, not silently dropped
+([P5](P5-stretch.md)):
+
+- **Branching reuse** (8 images × 12 questions, interleaved — tree-shaped
+  reuse rather than the linear reuse the core four test) — not run as of
+  this writeup. No harness blocker; deferred purely for schedule reasons
+  once P5's entry condition failed.
+- **Multi-turn chat** (4-turn conversations, full-history resend — growing
+  self-reuse within a session) — not run as of this writeup, and unlike
+  branching reuse this one has a real prerequisite: the day-1 harness has no
+  conversation-state support, so this needs new, unvalidated harness work
+  before it can run at all. Flagged in P5 as the highest schedule risk of the
+  four original stretch items; that risk is exactly why it's deferred rather
+  than rushed.
+
+Cache thrash is not listed here because it isn't deferred — it's subsumed:
+the Mooncake replay ([P6](P6-last-experiment.md)) is a strictly better
+version of the same eviction question, run against a real working set
+instead of a Zipf synthetic.
+
 ## Known limitations — state verbatim in the README
 
 N=1 hardware, one model, one day; synthetic noise images (encoder cost is
@@ -129,11 +192,15 @@ difference between a benchmark and a blog post.
 - [ ] `gap.png`'s facet logic is per-engine-per-workload, and its sparse-data
       caveat (or table demotion) is stated on the figure/in the README, not
       implied
-- [ ] Mechanism bullet treats cache-effect and graph-effect as adjudicated,
-      not assumed
+- [ ] Text-only control run: 2 workloads × 2 engines × n≥3 at `0.5κ`, its own
+      folder README regenerated, result table in the top-level README
+- [ ] Mechanism bullet treats cache-effect and graph-effect as adjudicated
+      using the text-only control, not assumed
 - [ ] Every workload README regenerated after the final run
 - [ ] Top-level README results section complete, both null categories used
       where they apply
+- [ ] Future work section lists branching reuse and multi-turn chat, dated,
+      with multi-turn's harness prerequisite stated
 - [ ] H7 prediction commit exists, its hash is noted, and its stated load
       regime is recorded
 - [ ] Repo pushed
