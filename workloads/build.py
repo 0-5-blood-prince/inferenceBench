@@ -141,13 +141,19 @@ class TextMaker:
 
 
 def noise_image(width: int, height: int, seed: int) -> bytes:
+    """Deterministic RGB noise.
+
+    numpy, not random.getrandbits per byte: at 448x448 that is 600k Python-level
+    calls per image, and the matrix needs thousands of images. Seeded, so the
+    images remain reproducible from the manifest.
+    """
+    import numpy as np
     from PIL import Image
 
-    rng = random.Random(seed)
-    raw = bytes(rng.getrandbits(8) for _ in range(width * height * 3))
-    img = Image.frombytes("RGB", (width, height), raw)
+    raw = np.random.default_rng(seed).integers(
+        0, 256, size=(height, width, 3), dtype=np.uint8)
     buf = io.BytesIO()
-    img.save(buf, format="PNG", compress_level=1)
+    Image.fromarray(raw, mode="RGB").save(buf, format="PNG", compress_level=1)
     return buf.getvalue()
 
 
@@ -278,7 +284,12 @@ def build(args) -> None:
             "request_id": idx,
             "messages": messages,
             "max_tokens": max_tokens,
+            # min_tokens + empty stop_token_ids alongside ignore_eos: ignore_eos
+            # covers only the tokenizer's eos_token_id, not the chat template's
+            # extra stop tokens, and an early stop turns into a fake latency win.
+            "min_tokens": max_tokens,
             "ignore_eos": True,
+            "stop_token_ids": [],
             "temperature": 0.0,
             "constructed_cacheable_tokens": cacheable_tokens,
             "constructed_cacheable_fraction": round(cacheable_tokens / total, 4),

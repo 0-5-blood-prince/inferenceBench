@@ -49,16 +49,25 @@ def load_requests(path: Path, limit: int):
 
 
 async def one_request(session, url, model, row, idx, is_warmup, results):
+    budget = row.get("max_tokens", 128)
     body = {
         "model": model,
         "messages": row["messages"],
-        "max_tokens": row.get("max_tokens", 128),
+        "max_tokens": budget,
         "temperature": row.get("temperature", 0.0),
         "stream": True,
         "stream_options": {"include_usage": True},
     }
     if row.get("ignore_eos"):
+        # Belt and suspenders. ignore_eos alone ignores only the tokenizer's
+        # eos_token_id, not the chat template's extra stop tokens - vLLM was
+        # measured returning 461/464 of a 512-token budget because the model
+        # emitted Gemma's <end_of_turn>. A short run is a fast run, so an
+        # unpinned budget silently turns a stopping difference into a latency
+        # difference and attributes it to caching.
         body["ignore_eos"] = True
+        body["min_tokens"] = budget
+        body["stop_token_ids"] = []
 
     start = time.perf_counter()
     ttft = None
@@ -101,6 +110,13 @@ async def one_request(session, url, model, row, idx, is_warmup, results):
         return
 
     itls = [b - a for a, b in zip(token_times, token_times[1:])]
+    # SGLang reports per-request cached tokens here when started with
+    # --enable-cache-report (non-streaming only for the details block on some
+    # versions). vLLM leaves it None and must be attributed from /metrics
+    # counter diffs instead. Recording whatever is present keeps Gate R's
+    # "genuine cache hit" check per-request rather than per-run.
+    details = (usage or {}).get("prompt_tokens_details") or {}
+    completed_tokens = (usage or {}).get("completion_tokens")
     results.append({
         "request_id": row.get("request_id", idx),
         "index": idx,
@@ -109,6 +125,11 @@ async def one_request(session, url, model, row, idx, is_warmup, results):
         "e2e_s": end - start,
         "output_chunks": len(token_times),
         "usage": usage,
+        "completion_tokens": completed_tokens,
+        "budget_honoured": (completed_tokens == row.get("max_tokens")
+                            if completed_tokens is not None else None),
+        "cached_tokens": details.get("cached_tokens"),
+        "prompt_tokens": (usage or {}).get("prompt_tokens"),
         "constructed_cacheable_fraction": row.get("constructed_cacheable_fraction"),
         "error": error,
     })
@@ -174,6 +195,14 @@ def summarize(args, results, offered, wall) -> dict:
     measured_offered = max(0, offered - args.warmup)
     completion = len(ok) / measured_offered if measured_offered else 0.0
 
+    # Gate R condition 2: if the engine did not honour the budget, this run did
+    # a different amount of work than its counterpart and its latency is not
+    # comparable. Surfaced as a tag, not buried in per-request rows.
+    checked = [r for r in ok if r["budget_honoured"] is not None]
+    short = [r for r in checked if not r["budget_honoured"]]
+    cached = [r["cached_tokens"] for r in ok if r["cached_tokens"] is not None]
+    prompts = [r["prompt_tokens"] for r in ok if r["prompt_tokens"]]
+
     summary = {
         "run_id": args.run_id,
         "jsonl": args.jsonl,
@@ -202,7 +231,18 @@ def summarize(args, results, offered, wall) -> dict:
             "mean": statistics.fmean(itls) if itls else None,
         },
         # SPEC section 6: below 0.95 the run measures queueing, not caching.
-        "tags": ["saturated"] if completion < 0.95 else ["ok"],
+        "budget_honoured_count": len(checked) - len(short),
+        "budget_short_count": len(short),
+        "cached_tokens_reported": len(cached),
+        "measured_cached_fraction": (
+            round(sum(cached) / sum(prompts), 4)
+            if cached and prompts and sum(prompts) else None),
+        # SPEC section 6: below 0.95 the run measures queueing, not caching.
+        # budget_unpinned is a Gate R failure - the compared runs did different
+        # amounts of work, so their latencies are not comparable however clean
+        # they look.
+        "tags": (["saturated"] if completion < 0.95 else ["ok"])
+                + (["budget_unpinned"] if short else []),
     }
     return {"summary": summary, "requests": results}
 

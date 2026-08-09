@@ -69,9 +69,13 @@ DESCRIPTIONS = {
 
 # Counter names differ per engine and their exact semantics are pinned at Gate B
 # (P1). Anything not found here renders as "n/a" rather than a guess.
+# vLLM exposes only aggregate counters, so its cached fraction is a counter diff
+# across the run. SGLang's sglang:cache_hit_rate is a GAUGE and reads 0.0 after a
+# run even when reuse demonstrably happened - never diff it. SGLang's per-request
+# cached_tokens (via --enable-cache-report) is captured by the client instead and
+# surfaces as summary.measured_cached_fraction.
 HIT_COUNTERS = {
     "vllm": ("vllm:prefix_cache_hits_total", "vllm:prefix_cache_queries_total"),
-    "sglang": ("sglang:cached_tokens_total", "sglang:prompt_tokens_total"),
 }
 
 

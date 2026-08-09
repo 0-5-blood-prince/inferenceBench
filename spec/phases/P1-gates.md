@@ -4,8 +4,21 @@
 |---|---|
 | **Objective** | Prove the measurement is valid before spending any runs on it |
 | **Entry** | P0 exit: model locked, workloads built |
-| **Exit** | Gates A–C passed (or resolved per fallback); config dumps committed |
-| **Hard rule** | Gate A is blocking. Gate B blocks only if *both* engines fail. |
+| **Exit** | Gates R, B, C passed (or resolved per fallback); config dumps committed |
+| **Hard rule** | Gate R is blocking. Gate B blocks only if *both* engines fail. |
+
+> **Amended after P1 was run — Gate A removed as a blocker.** The original Gate A
+> required reused KV to produce byte-identical output to fresh prefill. Measured
+> at 36 tokens it gave vLLM PASS / SGLang FAIL; re-measured at 512 tokens
+> **both engines fail** (vLLM diverges at token 55, SGLang at token 21). Neither
+> uses batch-invariant kernels by default, so the "pass" was only a statement
+> about how far we happened to generate. More importantly the gate guarded the
+> wrong property: this study's dependent variables are latencies, and no latency
+> reads token values — TTFT is fixed at position 0, before any divergence can
+> occur. Cross-engine output equivalence never held anyway, cold or warm.
+> Gate A is replaced by **Gate R**, which checks the thing latency actually
+> depends on. The divergence index is still recorded, as a diagnostic, not a
+> gate. Full reasoning and numbers in [`LEARNINGS.md`](../../LEARNINGS.md).
 
 ## 1:30–2:00 — Servers up, config dumps
 
@@ -27,7 +40,7 @@ What actually validates the experiment is **within-engine** consistency:
 
 ```mermaid
 flowchart TD
-    GA{"Gate A — per engine, greedy, conc 1:<br/>cache-off output == cold cache-on output<br/>== warm cache-on output?"} -- fail --> S1["Blocker: reused KV != fresh prefill.<br/>Investigate or switch model."]
+    GA{"Gate R — per engine:<br/>counters show a real cache hit,<br/>token budget pinned,<br/>request shape matched?"} -- fail --> S1["Blocker: the warm run is not<br/>demonstrably a cache hit, or the<br/>two runs did different work."]
     GA -- pass --> GB{"Gate B — identical request sent twice:<br/>TTFT2 / TTFT1 per engine?"}
     GB -- "both > 0.8" --> S2["Premise dead: multimodal prefix<br/>not cached. Switch model or abort."]
     GB -- "asymmetric" --> N1["Record — possible headline finding.<br/>Proceed; interpret Full reuse and<br/>Partial reuse accordingly."]
@@ -38,12 +51,42 @@ flowchart TD
     FBC --> P2
 ```
 
-### Gate A — reused KV ≡ fresh prefill (blocking)
+### Gate R — the warm run is a real cache hit, doing matched work (blocking)
 
-Three sends per engine: cache disabled ×1; restart with cache enabled ×2
-(cold, then warm). All three outputs token-identical at greedy over 128 tokens.
-This is the property the whole experiment rests on. If divergence appears only
-deep in the tail, gate on the first 64 tokens and record.
+What a latency comparison actually depends on. Three conditions, checked
+symmetrically on both engines:
+
+1. **Genuine reuse, proven by mechanism rather than output.** The engine's own
+   cached-token counters must increment *and* latency must drop. A run that is
+   merely fast — because it landed in a smaller batch, say — is a real number
+   mislabelled as a cache saving. This is a positive check, not an equivalence
+   check. Per-request sources differ per engine and are pinned here, not
+   assumed: vLLM exposes only `vllm:prefix_cache_{hits,queries}_total` on
+   `/metrics` (diff them around each request, serially); SGLang needs
+   `--enable-cache-report` and then returns `cached_tokens` in the non-streaming
+   `usage` object.
+2. **Token budget pinned identically.** This is the one way output divergence
+   can bite a latency number sideways: if a divergent token happens to be a stop
+   token, that run ends early and a 40-token run gets compared against a
+   128-token one with the delta attributed to caching. Every timed request sends
+   `max_tokens`, `min_tokens`, `ignore_eos: true` **and** `stop_token_ids: []`
+   — `ignore_eos` alone ignores only the tokenizer's `eos_token_id`, not the
+   chat template's extra stop tokens, and vLLM was measured stopping at 461/464
+   of a 512-token budget because of exactly that. Verify `completion_tokens`
+   equals the budget on both engines before trusting any timing.
+3. **Matched request shape.** Same prompt, same image token geometry, same batch
+   context across the runs being compared.
+
+**Recorded but not gating:** the token index at which the warm path first
+diverges from the fresh path, per engine, at a stated generation length. It is a
+continuous quantity, not a boolean — the probability of at least one divergence
+grows with length, so "matches through 64" and "matches through 512" are
+different grades. Report the index and the length together.
+
+This gate cannot be loosened for any claim that reads output *content* — cache
+transparency, unchanged outputs, generation quality. Such a claim needs
+per-engine deterministic mode on both engines, which the pinned SGLang version
+does not offer ([`LEARNINGS.md`](../../LEARNINGS.md) §5).
 
 ### Gate B — what does the multimodal path actually cache?
 
@@ -65,8 +108,13 @@ If not, the fallback client takes over — no new code written here.
 
 ## Exit checklist
 
-- [ ] Config dumps for both engines committed
-- [ ] Gate A: 3-way identical output per engine, logged verbatim
+- [ ] Config dumps for both engines committed, including whether each engine
+      captured CUDA graphs and with which batch-size buckets — a decode-latency
+      comparison across engines running different launch strategies measures the
+      launch strategy ([`LEARNINGS.md`](../../LEARNINGS.md) §7)
+- [ ] Gate R: per-request cached-token source working on both engines;
+      `completion_tokens` equals the pinned budget on both
 - [ ] Gate B: TTFT₂/TTFT₁ per engine recorded; hit-rate semantics pinned
 - [ ] Gate C: harness (or fallback) demonstrated on all four JSONLs
+- [ ] Divergence index recorded per engine, with its generation length
 - [ ] Cross-engine informational diff logged
