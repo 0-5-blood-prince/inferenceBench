@@ -123,6 +123,17 @@ Then, exactly four bullets:
   the gap unless graphs are ruled out. (b) is independently interesting even
   if it turns out to dominate: a real, publishable difference in multimodal
   prefill handling that has nothing to do with prefix reuse.
+  **Result (text-only control, n=3/engine, ran after P5 was skipped):** the
+  gap shrinks but does not vanish on either workload — Full reuse 50.5%→32.9%,
+  Partial reuse 70.7%→60.2%
+  ([`../../workloads/full-reuse-text/README.md`](../../workloads/full-reuse-text/README.md),
+  [`../../workloads/partial-reuse-text/README.md`](../../workloads/partial-reuse-text/README.md)).
+  Both workloads shrinking by roughly the same fraction, neither dropping to
+  noise, is a split verdict, not a winner: (b) accounts for something like a
+  third of the gap and (a) or another general-scheduling effect accounts for
+  the rest. Write the mechanism bullet as a split finding, not an
+  either/or — the text-only control is what makes the split visible instead
+  of assumed.
 - **What the saturated runs showed, interpreted as queueing behavior — and
   use the one real replicate set as evidence, not just an annotation.** Full
   reuse `0.8κ` has n=3 on both engines (the late-pass variance block): SGLang's
