@@ -33,11 +33,21 @@ Green segments are byte-identical across every request in this workload; red seg
 
 ## Results
 
-_No runs yet._ This README was rendered before the matrix; the table fills in as each cell completes.
+| Run | Engine | Rate (req/s) | p50 TTFT (ms) | p99 TTFT (ms) | p50 ITL (ms) | Completed / offered | Cached fraction | Tag |
+|---|---|---|---|---|---|---|---|---|
+| `single-stream_sglang` | sglang | — | 251 | 265 | 42 | 200 / 200 | n/a | ok |
+| `single-stream_vllm` | vllm | — | 138 | 156 | 42 | 200 / 200 | 85.2% | ok, jit_contaminated |
+
+p50 is primary. At 200 requests p99 is the second-worst sample and is descriptive only.
 
 ## Validity
 
 No cache-fraction gate applies to this workload; completion rate is the only validity condition.
+
+| Run | Completion ≥ 95% | Cache gate | Verdict |
+|---|---|---|---|
+| `single-stream_sglang` | yes | pass | ok |
+| `single-stream_vllm` | yes | pass | ok |
 
 ---
 

@@ -47,6 +47,16 @@ false engine asymmetry.
   reported `ok`. The fix, why its margin (1.15x vs `pilot.py`'s 1.1x) is
   deliberately approximate rather than tuned, and the `rows_exhausted`
   assertion that catches it directly if the margin is ever insufficient
+- [ttft-growth-signal.md](learnings/measurement/ttft-growth-signal.md) — the
+  real P3 matrix ran (28 cells), and reviewing the actual results found 16 of
+  them had genuinely collapsed under queueing (TTFT to 10-180s) while tagged
+  `ok`, because completion ratio — the only saturation signal `client.py`'s
+  live tagging used — stayed near a perfect 1.0 throughout. Fixed by adding
+  a TTFT-growth signal (verified against all 28 real cells first) and
+  retagging the already-collected data in place; no cell needed re-running.
+  Also states plainly what this changes about reading the results: several
+  `0.8κ` cells, meant to be a clean sub-saturation comparison point, are
+  already past-knee on SGLang for two of three core workloads
 - [p3-statistical-review.md](learnings/measurement/p3-statistical-review.md) —
   an external methodology review of the P3 design, done before any real cell
   ran: n=1 per cell with the wrong variance probe, a verified (not assumed)

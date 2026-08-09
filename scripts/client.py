@@ -246,6 +246,29 @@ def stats(values):
             "p99": percentile(values, 99), "mean": statistics.fmean(values)}
 
 
+def ttft_growth_ratio(ok):
+    """Median TTFT of the run's second half over its first half, in arrival
+    order. SPEC section 6's own definition of saturation is "open-loop TTFT is
+    a function of run length - the queue grows without bound" - completion
+    ratio can stay a perfect 1.0 while this is happening (the engine still
+    finishes everything, just far too slowly), which is exactly what let half
+    of the real P3 matrix's cells collapse into 10-180s TTFT while tagged `ok`.
+    This operationalizes SPEC's own sentence directly: a flat run has ratio
+    near 1.0; a collapsing one grows without bound. Verified against all 28
+    real matrix cells before picking the threshold: every genuinely healthy
+    cell measured 1.00-1.07, every visibly collapsed one (already obvious from
+    raw TTFT) measured >=2.4 - wide, unambiguous separation, no borderline
+    cases sitting near the cutoff."""
+    reqs = sorted((r for r in ok), key=lambda r: r["index"])
+    n = len(reqs)
+    if n < 10:
+        return None
+    first = [r["ttft_s"] for r in reqs[: n // 2]]
+    second = [r["ttft_s"] for r in reqs[n // 2 :]]
+    m1 = statistics.median(first)
+    return (statistics.median(second) / m1) if m1 > 0 else None
+
+
 def summarize(args, results, offered, wall, rows_exhausted=False) -> dict:
     ok = [r for r in results if r["error"] is None and r["ttft_s"] is not None]
     ttfts = [r["ttft_s"] for r in ok]
@@ -256,6 +279,7 @@ def summarize(args, results, offered, wall, rows_exhausted=False) -> dict:
     out_chunks = sum(r["output_chunks"] for r in ok)
     measured_offered = max(0, offered - args.warmup)
     completion = len(ok) / measured_offered if measured_offered else 0.0
+    ttft_growth = ttft_growth_ratio(ok)
 
     # Gate R condition 2: if the engine did not honour the budget, this run did
     # a different amount of work than its counterpart and its latency is not
@@ -334,10 +358,17 @@ def summarize(args, results, offered, wall, rows_exhausted=False) -> dict:
         # intended (the headroom math is a margin, not a guarantee, so this is
         # what actually catches it when the margin isn't enough).
         "rows_exhausted": rows_exhausted,
-        "tags": (["saturated"] if completion < 0.95 else ["ok"])
-                + (["budget_unpinned"] if short else [])
-                + (["rows_exhausted"] if rows_exhausted else []),
+        "ttft_growth_ratio": ttft_growth,
     }
+    # Saturated by either signal: completion ratio dropping (the original
+    # check) OR TTFT growing without bound within the run (SPEC section 6's
+    # own definition, which completion ratio alone can miss entirely - the
+    # engine can finish every request and still take 10-180s doing it).
+    ratio_saturated = ttft_growth is not None and ttft_growth > 2.0
+    summary["tags"] = (
+        (["saturated"] if (completion < 0.95 or ratio_saturated) else ["ok"])
+        + (["budget_unpinned"] if short else [])
+        + (["rows_exhausted"] if rows_exhausted else []))
     return {"summary": summary, "requests": results}
 
 

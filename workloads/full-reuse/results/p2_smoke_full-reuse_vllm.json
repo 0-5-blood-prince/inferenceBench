@@ -60,7 +60,8 @@
     "measured_cached_fraction": null,
     "tags": [
       "ok"
-    ]
+    ],
+    "ttft_growth_ratio": 1.2154379065450152
   },
   "requests": [
     {

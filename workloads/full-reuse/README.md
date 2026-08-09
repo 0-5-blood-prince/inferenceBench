@@ -35,7 +35,21 @@ Green segments are byte-identical across every request in this workload; red seg
 
 | Run | Engine | Rate (req/s) | p50 TTFT (ms) | p99 TTFT (ms) | p50 ITL (ms) | Completed / offered | Cached fraction | Tag |
 |---|---|---|---|---|---|---|---|---|
+| `full-reuse_sglang_0.5k` | sglang | 2.041 | 341 | 743 | 55 | 422 / 422 | n/a | ok |
+| `full-reuse_sglang_0.8k` | sglang | 3.266 | 10436 | 33332 | 75 | 743 / 744 | n/a | saturated |
+| `full-reuse_sglang_0.8k_late1` | sglang | 3.266 | 12506 | 36393 | 75 | 744 / 744 | n/a | saturated |
+| `full-reuse_sglang_0.8k_late2` | sglang | 3.266 | 11857 | 36811 | 75 | 744 / 744 | n/a | saturated |
+| `full-reuse_sglang_1.2k` | sglang | 4.899 | 74845 | 136487 | 74 | 1131 / 1131 | n/a | saturated |
+| `full-reuse_sglang_1.2k_late1` | sglang | 4.899 | 73961 | 134563 | 74 | 1131 / 1131 | n/a | saturated |
+| `full-reuse_sglang_1.2k_late2` | sglang | 4.899 | 76470 | 138332 | 74 | 1129 / 1131 | n/a | saturated |
+| `full-reuse_vllm_0.5k` | vllm | 2.041 | 227 | 349 | 57 | 422 / 422 | 85.4% | ok, jit_contaminated |
+| `full-reuse_vllm_0.8k` | vllm | 3.266 | 285 | 443 | 70 | 743 / 744 | 85.5% | ok |
+| `full-reuse_vllm_0.8k_late1` | vllm | 3.266 | 288 | 451 | 70 | 744 / 744 | 85.4% | ok, jit_contaminated |
+| `full-reuse_vllm_0.8k_late2` | vllm | 3.266 | 289 | 443 | 70 | 744 / 744 | 85.5% | ok |
 | `p2_smoke_full-reuse_vllm` | vllm | 3.266 | 266 | 421 | 68 | 200 / 200 | 85.2% | ok |
+| `full-reuse_vllm_1.2k` | vllm | 4.899 | 32358 | 80171 | 85 | 1131 / 1131 | 85.5% | saturated |
+| `full-reuse_vllm_1.2k_late1` | vllm | 4.899 | 32414 | 75211 | 85 | 1131 / 1131 | 85.5% | saturated |
+| `full-reuse_vllm_1.2k_late2` | vllm | 4.899 | 30866 | 79288 | 85 | 1129 / 1131 | 85.5% | saturated |
 
 p50 is primary. At 200 requests p99 is the second-worst sample and is descriptive only.
 
@@ -45,7 +59,21 @@ Measured cached-token fraction must sit within ±5 points of the constructed 87.
 
 | Run | Completion ≥ 95% | Cache gate | Verdict |
 |---|---|---|---|
+| `full-reuse_sglang_0.5k` | yes | no scrape | not yet checkable |
+| `full-reuse_sglang_0.8k` | yes | no scrape | not yet checkable |
+| `full-reuse_sglang_0.8k_late1` | yes | no scrape | not yet checkable |
+| `full-reuse_sglang_0.8k_late2` | yes | no scrape | not yet checkable |
+| `full-reuse_sglang_1.2k` | yes | no scrape | not yet checkable |
+| `full-reuse_sglang_1.2k_late1` | yes | no scrape | not yet checkable |
+| `full-reuse_sglang_1.2k_late2` | yes | no scrape | not yet checkable |
+| `full-reuse_vllm_0.5k` | yes | pass | ok |
+| `full-reuse_vllm_0.8k` | yes | pass | ok |
+| `full-reuse_vllm_0.8k_late1` | yes | pass | ok |
+| `full-reuse_vllm_0.8k_late2` | yes | pass | ok |
 | `p2_smoke_full-reuse_vllm` | yes | pass | ok |
+| `full-reuse_vllm_1.2k` | yes | pass | ok |
+| `full-reuse_vllm_1.2k_late1` | yes | pass | ok |
+| `full-reuse_vllm_1.2k_late2` | yes | pass | ok |
 
 ---
 

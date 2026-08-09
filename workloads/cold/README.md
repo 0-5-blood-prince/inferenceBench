@@ -32,11 +32,29 @@ Green segments are byte-identical across every request in this workload; red seg
 
 ## Results
 
-_No runs yet._ This README was rendered before the matrix; the table fills in as each cell completes.
+| Run | Engine | Rate (req/s) | p50 TTFT (ms) | p99 TTFT (ms) | p50 ITL (ms) | Completed / offered | Cached fraction | Tag |
+|---|---|---|---|---|---|---|---|---|
+| `cold_sglang_0.5k` | sglang | 0.63 | 1000 | 5376 | 49 | 200 / 200 | n/a | ok |
+| `cold_sglang_0.8k` | sglang | 1.008 | 20632 | 48020 | 50 | 200 / 200 | n/a | saturated |
+| `cold_sglang_1.2k` | sglang | 1.512 | 96169 | 185154 | 50 | 300 / 300 | n/a | saturated |
+| `cold_vllm_0.5k` | vllm | 0.63 | 573 | 1289 | 47 | 200 / 200 | n/a | ok, jit_contaminated |
+| `cold_vllm_0.8k` | vllm | 1.008 | 1058 | 10074 | 52 | 200 / 200 | n/a | saturated |
+| `cold_vllm_1.2k` | vllm | 1.512 | 44037 | 80036 | 52 | 300 / 300 | n/a | saturated |
+
+p50 is primary. At 200 requests p99 is the second-worst sample and is descriptive only.
 
 ## Validity
 
 Measured cached-token fraction must read approximately 0.
+
+| Run | Completion ≥ 95% | Cache gate | Verdict |
+|---|---|---|---|
+| `cold_sglang_0.5k` | yes | no scrape | not yet checkable |
+| `cold_sglang_0.8k` | yes | no scrape | not yet checkable |
+| `cold_sglang_1.2k` | yes | no scrape | not yet checkable |
+| `cold_vllm_0.5k` | yes | no scrape | not yet checkable |
+| `cold_vllm_0.8k` | yes | no scrape | not yet checkable |
+| `cold_vllm_1.2k` | yes | no scrape | not yet checkable |
 
 ---
 

@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| **Objective** | All 30 core runs, each valid or explicitly tagged |
+| **Objective** | All 28 core runs, each valid or explicitly tagged |
 | **Entry** | P2 exit: frozen commit + shared rate grid |
-| **Exit** | 30/30 runs with `completed ≥ 95%` or tagged `saturated`/`jit_contaminated`/`rows_exhausted`; metrics + GPU-clock snapshots present for every run |
+| **Exit** | 28/28 runs with `completed ≥ 95%` or tagged `saturated`/`jit_contaminated`/`rows_exhausted`; metrics + GPU-clock snapshots present for every run |
 | **Fallback** | If behind, drop the `1.2κ` overload row first — it is excluded from pooled analysis anyway. If still behind, the late-pass replicates are the second thing to trim, not the core 18 — see [SPEC §6](../SPEC.md) |
 
-> **Amended before the matrix ran.** Run count moved from 22 to 30 and the
+> **Amended before the matrix ran.** Run count moved from 22 to 28 and the
 > variance design changed — see [SPEC §6](../SPEC.md)'s amendment note and
 > [`../../learnings/measurement/p3-statistical-review.md`](../../learnings/measurement/p3-statistical-review.md)
 > for the full review this responds to.
@@ -21,7 +21,7 @@ engines, each cell run 3× total (2 replicates beyond the original) = **8
 runs**. These do not run back-to-back with the originals — see "Late pass"
 below.
 
-**30 runs total**, ≈150 min of runtime against this phase's 2h45 (165 min).
+**28 runs total**, ≈150 min of runtime against this phase's 2h45 (165 min).
 The remaining ~15 min is slack for the run that OOMs, not stretch budget —
 tighter than before, because the 8 extra runs are what convert "one run beat
 one run" into an actual variance estimate, which SPEC §6 now requires before
@@ -82,7 +82,18 @@ outside the workload it belongs to.
    covering this run; it tags `jit_contaminated` in the result JSON directly
    if a JIT/capture event fired during measurement
 5. **Validity, immediately, before the next run:**
-   - `completed / offered ≥ 95%`, else tag `saturated`
+   - `completed / offered ≥ 95%`, **or** `ttft_growth_ratio > 2.0` (second-half
+     median TTFT over first-half median, in arrival order) — either tags
+     `saturated`. Added after the real matrix run showed the gap directly:
+     16 of the first 28 cells had TTFT growing to 10–180s while completion
+     ratio stayed a perfect ~1.0, because the engine still finished every
+     request, just far too slowly — exactly this section's own definition of
+     saturation ("open-loop TTFT is a function of run length, the queue grows
+     without bound"), which completion ratio alone cannot see. The threshold
+     was verified against all 28 real cells before being fixed: every
+     genuinely healthy one measured 1.00–1.07, every visibly collapsed one
+     measured ≥2.4 — wide, unambiguous separation
+     ([`learnings/measurement/ttft-growth-signal.md`](../../learnings/measurement/ttft-growth-signal.md))
    - cached-token fraction in band: Full reuse within ±5 pts of ≈85–90%, Cold
      ≈0, Partial reuse inside its constructed span
      ([SPEC §6](../SPEC.md)) — out of band means the workload is broken and the
@@ -104,7 +115,7 @@ performs steps 1–4 and 6 automatically; step 5 and 7 are the operator's.
 
 ## Exit checklist
 
-- [ ] 30 result JSONs + 60 metrics snapshots + 60 GPU-clock snapshots
+- [ ] 28 result JSONs + 56 metrics snapshots + 56 GPU-clock snapshots
       committed, each under its own workload folder
 - [ ] Every run tagged: `ok` / `saturated` / `jit_contaminated` / `rows_exhausted` / `void(reason)`
 - [ ] Every workload README regenerated and reflecting its final run set

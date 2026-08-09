@@ -243,6 +243,16 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
   capture event during the measured window (`scripts/check_jit_contamination.py`);
   tag `jit_contaminated` and exclude if found — a contaminated run must no
   longer silently pass as `ok`.
+- **Amended after the real matrix ran — completion ratio alone missed 16 of
+  28 collapsed cells.** `saturated` now also fires on `ttft_growth_ratio > 2.0`
+  (median TTFT of a run's second half over its first half): 16 real P3 cells
+  showed TTFT growing to 10–180s while completion ratio held near a perfect
+  1.0 — the engine finished every request, just far too slowly, which is
+  this section's own stated definition of saturation and something
+  completion ratio structurally cannot see. Retagged the already-collected
+  data in place (`scripts/retag_ttft_growth.py`); no cell needed re-running,
+  only its classification was wrong
+  ([`learnings/measurement/ttft-growth-signal.md`](../../learnings/measurement/ttft-growth-signal.md)).
 - **GPU clock and temperature logged alongside every metrics scrape**
   (`clocks.sm`, `clocks.mem`, `temperature.gpu`, `power.draw`, pre and post).
   GPU clocks cannot be locked from inside this container
