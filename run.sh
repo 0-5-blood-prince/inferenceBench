@@ -240,11 +240,25 @@ up() {
     local flags=(--model "$MODEL" --port "$VLLM_PORT"
                  --gpu-memory-utilization "$GPU_MEM_FRAC"
                  --max-model-len "$MAX_MODEL_LEN")
-    # Cold disables the cache at the flag level - belt and suspenders on top of
-    # the workload already sharing nothing (SPEC section 5). VERIFY this flag
-    # against --help on the pinned version; if it has been renamed, the Cold
-    # block silently runs WITH caching and H2 becomes meaningless.
-    [ "$mode" = cold ] && flags+=(--no-enable-prefix-caching)
+    # Cold disables caching at the flag level - belt and suspenders on top of
+    # the workload already sharing nothing (SPEC section 5). VERIFY these flags
+    # against --help on the pinned version; if renamed, Cold silently runs WITH
+    # caching and H2 becomes meaningless.
+    #  --no-enable-prefix-caching  kills the KV prefix cache.
+    #  --mm-processor-cache-gb 0   kills the multimodal PROCESSOR cache, which
+    #    --no-enable-prefix-caching does NOT touch. Verified from the P3 scrapes:
+    #    Cold's "unique" images are the same bytes replayed at each rate cell, so
+    #    the processor cache (default 4 GiB, keyed by image content hash) stayed
+    #    warm across cells and Cold ran at 0%/100%/71% mm-hit at 0.5k/0.8k/1.2k -
+    #    "cold" only above the lowest rate by accident of eviction. The two
+    #    excluded-as-saturated cells hid it; disabling the cache makes the flag's
+    #    name true. See learnings/measurement/fairness-audit.md (D3).
+    if [ "$mode" = cold ]; then
+      flags+=(--no-enable-prefix-caching --mm-processor-cache-gb 0)
+    fi
+    # Optional ad-hoc flags for one-off experiments (e.g. the D2 graph A/B).
+    # Empty in the normal matrix path, so P3 is unaffected.
+    [ -n "${VLLM_EXTRA_FLAGS:-}" ] && flags+=(${VLLM_EXTRA_FLAGS})
     HF_TOKEN="$HF_TOKEN" nohup "$py" -m vllm.entrypoints.openai.api_server \
       "${flags[@]}" > "$logfile" 2>&1 &
   else
@@ -260,8 +274,22 @@ up() {
                  # sglang:cache_hit_rate is a gauge and useless post-run, so this
                  # is the only workable per-request cache signal on this engine.
                  --enable-cache-report)
-    [ "$mode" = cold ] && flags+=(--disable-radix-cache)
-    HF_TOKEN="$HF_TOKEN" nohup "$py" -m sglang.launch_server \
+    # --disable-radix-cache kills the KV prefix cache. SGLANG_VLM_CACHE_SIZE_MB=0
+    # kills the multimodal embedding cache (default 100 MB, hash-keyed, ViT-skip
+    # on hit) - the SGLang analogue of vLLM's processor cache and the same D3
+    # exposure, smaller because the cache is smaller. Set as env, not a flag:
+    # v0.5.16 reads the VLM cache size from the environment, not server_args.
+    local sglang_env=(HF_TOKEN="$HF_TOKEN")
+    if [ "$mode" = cold ]; then
+      flags+=(--disable-radix-cache)
+      sglang_env+=(SGLANG_VLM_CACHE_SIZE_MB=0)
+    fi
+    # Optional ad-hoc flags: the D2 graph A/B passes
+    # --cuda-graph-backend-prefill tc_piecewise here to force prefill graph
+    # capture that v0.5.16 auto-disables for this multimodal model. Empty in the
+    # normal matrix path.
+    [ -n "${SGLANG_EXTRA_FLAGS:-}" ] && flags+=(${SGLANG_EXTRA_FLAGS})
+    env "${sglang_env[@]}" nohup "$py" -m sglang.launch_server \
       "${flags[@]}" > "$logfile" 2>&1 &
   fi
 
@@ -363,6 +391,11 @@ cell() {
   local dir="workloads/$workload" url; url=$(base_url "$engine")
   local extra=()
   [ "$workload" = single-stream ] && extra=(--concurrency 1)
+  # Optional sample-size overrides (default to client.py's own defaults when
+  # unset, so the P3 matrix path is unchanged). The clean re-run (D4c) sets
+  # these to lift Full/Partial reuse past ~1000 completions for a powered p99.
+  [ -n "${NUM_REQUESTS:-}" ] && extra+=(--num-requests "$NUM_REQUESTS")
+  [ -n "${MIN_SECONDS:-}" ]  && extra+=(--min-seconds "$MIN_SECONDS")
 
   # Read lazily, not at script-parse time: manifest.json does not exist yet
   # during bootstrap/p0, and this constant is only needed once workloads are
@@ -492,14 +525,21 @@ p3() {
   log "P3 complete - 30 runs done. Review tags (ok/saturated/jit_contaminated/rows_exhausted/void) before P4."
 }
 
-case "${1:-}" in
-  bootstrap) bootstrap ;;
-  up)        shift; up "$@" ;;
-  down)      down ;;
-  p0)        p0 ;;
-  p1)        p1 ;;
-  p3)        p3 ;;
-  cell)      shift; cell "$@" ;;
-  rate)      shift; rate_for "$@" ;;
-  *) sed -n '2,20p' "$0"; exit 1 ;;
-esac
+# Only dispatch when executed directly. When sourced (the re-run scripts pull in
+# up()/down()/cell()/rate_for() so there is one definition of engine lifecycle,
+# not a second copy that drifts - it drifted once already), skip the case so
+# sourcing does not fall through to the exit-1 default and kill the caller's
+# shell. BASH_SOURCE[0] != $0 means "we were sourced".
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  case "${1:-}" in
+    bootstrap) bootstrap ;;
+    up)        shift; up "$@" ;;
+    down)      down ;;
+    p0)        p0 ;;
+    p1)        p1 ;;
+    p3)        p3 ;;
+    cell)      shift; cell "$@" ;;
+    rate)      shift; rate_for "$@" ;;
+    *) sed -n '2,20p' "$0"; exit 1 ;;
+  esac
+fi

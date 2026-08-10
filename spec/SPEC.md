@@ -327,6 +327,57 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
 - **Ordering:** alternate which engine runs first per workload block, so drift
   (thermal, host cache) does not correlate with engine identity.
 
+> **Amended after a defect audit of the completed matrix** (four defects D1–D4,
+> [`learnings/measurement/fairness-audit.md`](../learnings/measurement/fairness-audit.md)
+> and [`learnings/measurement/rerun-defects.md`](../learnings/measurement/rerun-defects.md)).
+> The clean comparison this section defines was drawn from a single rate
+> (`0.5κ`) at n=1, calibrated by a knee-finder that used a laxer saturation
+> rule than the one the matrix is judged by. The following corrections are
+> registered **before** the re-run that acts on them, so the re-run is
+> pre-registered, not fitted:
+>
+> - **D4 — knee recalibration + clean-point design.** `κ` was found by a pilot
+>   whose primary signal was completion ratio (+ an 8× TTFT-blowup backstop) —
+>   the same completion-ratio blindness that later mis-tagged 16 of 28 cells.
+>   `scripts/pilot.py` now uses `ttft_growth_ratio > 2.0` as the **primary**
+>   knee signal, so `κ` is calibrated by the matrix's own rule. The re-run
+>   samples **two rates both below `min(κ_vllm, κ_sglang)`** per workload (a low
+>   and a mid point), **n=3 at each**, replacing the variance block that was
+>   spent entirely at the saturated `0.8κ`/`1.2κ` points (variance measured
+>   where no verdict is drawn). Run length is lifted so Full reuse and Partial
+>   reuse clear **≥1000 completions** (a powered p99); Cold stays wall-clock
+>   capped and **reports p95, pre-registered here** — its arrival rate makes
+>   ≥1000 completions cost ~30 min/cell, and p99 for Cold is accepted as
+>   underpowered by design rather than chased.
+> - **D3 — cache isolation between rate cells.** Prometheus counters were
+>   continuous across a workload's rate cells (no restart between them), and
+>   `--no-enable-prefix-caching` disables vLLM's KV prefix cache but **not** its
+>   multimodal processor cache: verified from the scrapes, Cold ran at 0 % / 100
+>   % / 71 % mm-hit at `0.5κ`/`0.8κ`/`1.2κ` because the same "unique" images were
+>   replayed at each rate — Cold was not cold above the lowest rate. Both
+>   affected cells were already excluded as saturated, so no reported number
+>   moves, but the flag did not mean what its name says. Fixed two ways: Cold now
+>   also passes `--mm-processor-cache-gb 0` (vLLM) / `SGLANG_VLM_CACHE_SIZE_MB=0`
+>   (SGLang), **and** the re-run restarts the server before **every** cell, which
+>   resets all cache state regardless of any single flag's reach.
+> - **D2 — CUDA-graph confound made a measurement, not an inference.** The
+>   matrix conflated engine architecture with a config default: SGLang
+>   auto-disables prefill graph capture for this multimodal model while vLLM
+>   graphs prefill. The auto-disable is skipped when the prefill backend is set
+>   explicitly, so a dedicated A/B (`scripts/graph_ab.sh`: stock vs
+>   `--cuda-graph-backend-prefill tc_piecewise`, Full/Partial reuse, n=3 at the
+>   clean rate) now **measures** the graph contribution directly instead of
+>   leaving it inferred. If the forced-graph arm faults (the path is unvalidated
+>   for this architecture — the reason the auto-disable ships), that fault is the
+>   finding: the asymmetry reclassifies from uncontrolled confound to
+>   unavoidable engine property, which a defaults comparison may absorb.
+> - **D1 (noted, not corrected here):** all four vLLM clean-rate cells carry
+>   `jit_contaminated` while all four SGLang counterparts are clean — an
+>   exclusion perfectly correlated with engine identity. The D4 re-run cures it
+>   for free (same runs, longer warmup), so it is not given a separate
+>   correction; the direction of every affected verdict is unchanged because the
+>   contamination biases *against* the winner (vLLM).
+
 **Collection, per run** (committed to the repo):
 1. Harness JSON: per-request TTFT, ITL, e2e latency, completed count.
 2. `/metrics` snapshots pre and post run, both engines' Prometheus endpoints —

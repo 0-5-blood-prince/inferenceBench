@@ -33,11 +33,21 @@ After this commit:
 > extra 2-minute pilot points (~15-20 min against a 3-hour matrix) and removes
 > a real risk, so it is corrected here rather than carried into P3.
 
+> **Amended again after the matrix ran — the knee was calibrated by too lax a
+> signal.** The pilot's primary stop was completion ratio (with an 8× TTFT
+> blowup backstop), the same completion-ratio blindness that later mis-tagged
+> 16 of 28 matrix cells. `κ` came out too high, so `0.8κ` was past-knee for
+> SGLang (Full/Partial reuse) and both engines (Cold), leaving only `0.5κ`
+> clean. `scripts/pilot.py` now uses `ttft_growth_ratio > 2.0` as the primary
+> knee signal and the re-pilot (`scripts/repilot.sh`) re-derives `κ` per engine
+> under it. See [SPEC §6](../SPEC.md)'s D2–D4 amendment and
+> [`../../learnings/measurement/rerun-defects.md`](../../learnings/measurement/rerun-defects.md).
+
 2-minute open-loop sweeps per workload (Full reuse, Cold, Partial reuse), on
 **both** engines, to locate each one's saturation knee — the rate where
-completed/offered starts falling, or (see [SPEC §6](../SPEC.md) and
-[`../../learnings/measurement/pilot-methodology.md`](../../learnings/measurement/pilot-methodology.md))
-where p50 TTFT blows past its baseline, whichever comes first in practice.
+`ttft_growth_ratio` crosses 2.0 (primary), or completed/offered starts falling,
+whichever comes first (see [SPEC §6](../SPEC.md) and
+[`../../learnings/measurement/pilot-methodology.md`](../../learnings/measurement/pilot-methodology.md)).
 
 - **The rate grid used in the matrix must be identical for both engines.**
   Testing each engine at its own knee confounds every delta with a load

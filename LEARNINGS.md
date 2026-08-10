@@ -70,6 +70,12 @@ false engine asymmetry.
   symmetric on both engines, and a newly surfaced third mechanism candidate
   (vLLM's decode-prioritizing scheduler admitting nearly-free cached
   prefills vs SGLang's retract-and-re-prefill loop)
+- [rerun-defects.md](learnings/measurement/rerun-defects.md) — four defects
+  found auditing the *finished* matrix (no restart between rate cells so Cold
+  wasn't cold above 0.5κ; knee miscalibrated so only 0.5κ survived, at n=1;
+  the CUDA-graph confound left inferred not measured; one-sided JIT
+  contamination on every vLLM clean point), each verified against the recorded
+  data and all four closed by one pre-registered re-run
 - [metrics-instrumentation.md](learnings/measurement/metrics-instrumentation.md) —
   closing the gap against NVIDIA's standard LLM benchmarking metric set
   (token-counted TPS, TPS-per-user, RPS, ISL/OSL, image/text token split,

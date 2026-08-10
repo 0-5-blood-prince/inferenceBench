@@ -11,6 +11,17 @@
 > variance design changed — see [SPEC §6](../SPEC.md)'s amendment note and
 > [`../../learnings/measurement/p3-statistical-review.md`](../../learnings/measurement/p3-statistical-review.md)
 > for the full review this responds to.
+>
+> **Superseded in part after the matrix ran (defect audit D3/D4).** The 28 runs
+> below stand as collected, but the *clean comparison* they were meant to yield
+> collapsed to a single rate (`0.5κ`) at n=1, and the late-pass variance block
+> was spent at the saturated `0.8κ`/`1.2κ` points. A pre-registered re-run
+> (`scripts/rerun_clean.sh`: two sub-`κ_min` rates, n=3, restart before every
+> cell, run length lifted for a powered p99) replaces the clean-point layer;
+> the knee is re-derived first (`scripts/repilot.sh`). This block's own numbers
+> are not re-collected — only the clean-comparison layer on top of them is. See
+> [SPEC §6](../SPEC.md)'s D2–D4 amendment and
+> [`../../learnings/measurement/rerun-defects.md`](../../learnings/measurement/rerun-defects.md).
 
 ## The matrix
 

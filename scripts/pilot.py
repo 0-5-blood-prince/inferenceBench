@@ -5,13 +5,21 @@
         --model google/gemma-4-31B-it
 
 2-minute open-loop sweeps at geometrically increasing rates (SPEC section 2,
-P2-freeze.md), stopping at the first point that looks saturated by EITHER of two
+P2-freeze.md), stopping at the first point that looks saturated by ANY of three
 signals:
 
+  - ttft_growth_ratio within one point exceeds --ttft-growth (PRIMARY): the
+    2nd-half/1st-half median-TTFT ratio, the same criterion the P3 retag used
+    after completion-ratio alone missed 16 of 28 saturated cells
   - completed/offered drops below --threshold (SPEC's own stated definition)
   - p50 TTFT grows past --ttft-blowup times the first point's baseline TTFT
+    (backstop for a point that is already uniformly slow on arrival)
 
-The second signal exists because the first one arrived too late in practice.
+The first calibration of kappa used completion-ratio + blowup only. That let
+0.8k land past-knee for SGLang on Full reuse and Partial reuse, and for both
+engines on Cold - the whole reason only 0.5k survived the matrix as clean. A
+re-pilot with the growth signal as PRIMARY is what closes that gap; the knee it
+finds is judged by the same rule the matrix cells are.
 Measured on this pod: completion_ratio stayed at a perfect 1.000 while p50 TTFT
 went from ~200-500ms to 19-31 SECONDS between one rate step and the next, and
 the run after that blew the subprocess timeout entirely, taking down the whole
@@ -111,6 +119,15 @@ def run_point(args, rate: float, run_id: str, available_rows: int) -> dict:
     return {"rate": rate, "completion_ratio": s["completion_ratio"],
             "ttft_p50_s": s["ttft_s"]["p50"], "offered": s["offered"],
             "completed": s["completed"],
+            # Within-point knee signal: median TTFT of this point's second half
+            # over its first half. >2.0 means the queue grew without bound
+            # DURING the point - the faithful reading of SPEC section 6's
+            # "open-loop TTFT is a function of run length". This is the same
+            # signal that later caught 16 of 28 P3 cells the completion-ratio
+            # and blowup triggers had missed; the pilot now stops on it too,
+            # so kappa is not calibrated by a laxer rule than the one the
+            # matrix is judged by. See learnings/measurement/ttft-growth-signal.md
+            "ttft_growth_ratio": s.get("ttft_growth_ratio"),
             "tokens_per_second": s.get("tokens_per_second"),
             "tokens_per_second_per_user": s.get("tokens_per_second_per_user"),
             "isl_tokens_p50": (s.get("isl_tokens") or {}).get("p50"),
@@ -156,9 +173,17 @@ def main() -> None:
     p.add_argument("--max-rate", type=float, default=12.0)
     p.add_argument("--max-points", type=int, default=8)
     p.add_argument("--threshold", type=float, default=0.95)
+    p.add_argument("--ttft-growth", type=float, default=2.0,
+                   help="treat saturated once a single point's within-run "
+                        "ttft_growth_ratio (2nd-half median / 1st-half median) "
+                        "exceeds this - the primary knee signal, matching the "
+                        "P3 retag criterion")
     p.add_argument("--ttft-blowup", type=float, default=8.0,
-                   help="treat saturated once p50 TTFT exceeds this multiple "
-                        "of the first point's TTFT")
+                   help="secondary signal: saturated once p50 TTFT exceeds "
+                        "this multiple of the first point's TTFT. Kept as a "
+                        "backstop for the case where a point is uniformly slow "
+                        "from its first request (already past knee on arrival), "
+                        "which within-run growth alone would not flag")
     p.add_argument("--out", default="")
     p.add_argument("--image-tokens", type=int, default=None,
                    help="defaults to workloads/manifest.json geometry.image_tokens")
@@ -207,9 +232,12 @@ def main() -> None:
             tps = r.get("tokens_per_second")
             isl, osl = r.get("isl_tokens_p50"), r.get("osl_tokens_p50")
             img, txt = r.get("image_tokens_p50"), r.get("text_tokens_p50")
+            grow = r.get("ttft_growth_ratio")
+            grow_str = f"{grow:.2f}" if grow is not None else "n/a"
             print(f"  rate {rate:6.2f} req/s  completed/offered "
                   f"{r.get('completed', '?')}/{r.get('offered', '?')} = {ratio:.3f}  "
                   f"p50 TTFT {ttft * 1000 if ttft else float('nan'):.0f}ms  "
+                  f"growth {grow_str}  "
                   f"TPS {tps if tps is not None else '?'}")
             print(f"    ISL(p50) {isl}  OSL(p50) {osl}  "
                   f"image/text tokens {img}/{txt}  "
@@ -221,20 +249,49 @@ def main() -> None:
                 print(f"    counters this point: {delta}")
                 print(f"    gauges (KV usage etc) at end of point: {gauges_now}")
 
+        growth = r.get("ttft_growth_ratio")
         ratio_bad = ratio is None or ratio < args.threshold
+        growth_bad = growth is not None and growth > args.ttft_growth
         ttft_bad = (ttft and baseline_ttft
                    and ttft > baseline_ttft * args.ttft_blowup and i > 0)
-        if ratio_bad or ttft_bad:
-            reason = "completion ratio" if ratio_bad else "TTFT blowup"
-            print(f"  -> saturated ({reason})")
+
+        def point_is_good(pt):
+            """A prior point counts as sub-knee only if it passed ALL three
+            signals - the same conjunction used to stop, applied backwards so
+            the interpolation anchor is not itself already saturated."""
+            if pt is None or pt.get("completion_ratio") is None:
+                return False
+            if pt["completion_ratio"] < args.threshold:
+                return False
+            g = pt.get("ttft_growth_ratio")
+            if g is not None and g > args.ttft_growth:
+                return False
+            if (baseline_ttft and pt.get("ttft_p50_s")
+                    and pt["ttft_p50_s"] > baseline_ttft * args.ttft_blowup):
+                return False
+            return True
+
+        if ratio_bad or growth_bad or ttft_bad:
+            reason = ("completion ratio" if ratio_bad else
+                      "TTFT growth" if growth_bad else "TTFT blowup")
+            print(f"  -> saturated ({reason}"
+                  f"{f'; growth={growth:.2f}' if growth is not None else ''})")
             prev = points[-2] if len(points) > 1 else None
-            good = (prev and prev.get("completion_ratio") is not None
-                   and prev["completion_ratio"] >= args.threshold
-                   and not (baseline_ttft and prev.get("ttft_p50_s")
-                            and prev["ttft_p50_s"] > baseline_ttft * args.ttft_blowup))
-            if good and ratio is not None:
-                # Interpolate on completion_ratio between the last good point and
-                # this bad one, same idea whichever signal triggered the stop.
+            good = point_is_good(prev)
+            if good and growth_bad and prev.get("ttft_growth_ratio") is not None:
+                # Growth was the trigger and completion_ratio is typically 1.0
+                # on both sides here, so interpolate on growth crossing the
+                # threshold, not on ratio (which would degenerate to a blind
+                # midpoint). Linear between the last sub-threshold growth and
+                # this over-threshold one.
+                r0, g0 = prev["rate"], prev["ttft_growth_ratio"]
+                r1, g1 = r["rate"], growth
+                frac = (args.ttft_growth - g0) / (g1 - g0) if g1 != g0 else 0.5
+                frac = min(max(frac, 0.0), 1.0)
+                kappa = r0 + frac * (r1 - r0)
+            elif good and ratio is not None:
+                # Completion-ratio (or blowup) trigger: interpolate on ratio
+                # crossing --threshold between the last good point and this one.
                 r0, c0 = prev["rate"], prev["completion_ratio"]
                 r1, c1 = r["rate"], ratio
                 frac = (c0 - args.threshold) / (c0 - c1) if c0 != c1 else 0.5
