@@ -63,6 +63,13 @@ false engine asymmetry.
   warmup-too-short bug, tail-latency survivorship bias, why 1.2κ can never be
   a point estimate, and unlogged thermal drift — all five claims checked
   against real evidence before acting on them
+- [fairness-audit.md](learnings/measurement/fairness-audit.md) — post-hoc
+  audit of whether the two engines got a fair comparison, checked against
+  both engines' source at the pinned tags: verdict fair-with-two-disclosed-
+  asymmetries, measured KV pools within ~13%, shared-image encoder caching
+  symmetric on both engines, and a newly surfaced third mechanism candidate
+  (vLLM's decode-prioritizing scheduler admitting nearly-free cached
+  prefills vs SGLang's retract-and-re-prefill loop)
 - [metrics-instrumentation.md](learnings/measurement/metrics-instrumentation.md) —
   closing the gap against NVIDIA's standard LLM benchmarking metric set
   (token-counted TPS, TPS-per-user, RPS, ISL/OSL, image/text token split,
