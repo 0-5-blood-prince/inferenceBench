@@ -33,6 +33,10 @@ shrink could be noise at n=3, two in the same direction is a real signal.
 
 Raw results: [`results/`](results/). Both engines completed 422/422 requests
 every rep (`completion_ratio: 1.0`), well clear of `0.5κ`'s saturation
-margin. One rep on each engine logged the known JIT-compile warmup warning
-(see [`learnings/measurement`](../../learnings/measurement/)); harmless past
-the discarded warmup window, and consistent with what P3's real cells showed.
+margin — every rep's `ttft_growth_ratio` sits in 0.97–1.01, nowhere near the
+2.0 saturation threshold. vLLM's rep1 is tagged `jit_contaminated` (the
+known first-traffic Triton JIT warmup, same as P3's first-cell pattern —
+see [`learnings/measurement`](../../learnings/measurement/)); its p50
+(218.8ms) is indistinguishable from the clean reps (216.3/219.9ms), so the
+contamination is confined to the discarded warmup window. No SGLang rep
+tripped the JIT check.
