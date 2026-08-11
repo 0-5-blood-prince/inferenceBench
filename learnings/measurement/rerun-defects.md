@@ -89,6 +89,19 @@ reclassifies from "confound the study failed to control" to "engine property a
 user of this model cannot avoid," which a defaults comparison is allowed to
 absorb.
 
+**Knee extension.** The stock re-pilot found SGLang's saturation knee is only
+~45–55 % of vLLM's on every workload (full-reuse 1.88 vs 4.12 req/s; cold 0.72
+vs 1.30) — all measured with prefill graphs *off* (the default). So a fixed-rate
+TTFT delta is not the whole D2 question: does forcing prefill graphs on move the
+*knee*? `scripts/repilot_sglang_graphs.sh` re-pilots SGLang with
+`--cuda-graph-backend-prefill tc_piecewise` on full/partial reuse and compares
+the knee against `pilot_sglang.json`. Knee jumps toward vLLM's → the graph
+disable is the dominant cause of SGLang's saturation disadvantage; knee barely
+moves → it is scheduling/KV, not graphs; capture faults → structural and
+unavoidable for this model. It guards against a silent re-disable (server up but
+log still says "disabling prefill CUDA graph" ⇒ the flag didn't take, knee is
+effectively stock).
+
 ## D1 — one-sided JIT contamination (noted, cured for free)
 
 All four vLLM clean-rate cells carry `jit_contaminated`; all four SGLang
