@@ -138,6 +138,15 @@ bootstrap() {
     "$pip" install -q --upgrade pip
     if [ "$engine" = vllm ]; then
       "$pip" install -q "vllm==$VLLM_VERSION"
+      # Pin transformers to the version the P2 build validated
+      # (env/vllm-freeze.txt). vLLM 0.26.0 constrains transformers only to a
+      # RANGE, so a fresh bootstrap weeks later pulls whatever is newest in
+      # that range - and transformers 5.15.0 made `head_dim` a per-layer
+      # attribute that vLLM 0.26.0 reads globally, crashing every model load
+      # with AmbiguousGlobalPerLayerAttributeError. 5.14.1 is the frozen,
+      # known-good version. SGLang pins transformers itself, so it needs no
+      # equivalent. See learnings/infrastructure/environment.md.
+      "$pip" install -q "transformers==${VLLM_TRANSFORMERS:-5.14.1}"
     else
       "$pip" install -q "sglang[all]==$SGLANG_VERSION"
     fi
@@ -145,6 +154,10 @@ bootstrap() {
     # engine declares it, so without this the server dies after loading 60 GB
     # of weights with a bare FileNotFoundError.
     "$pip" install -q ninja
+    # ninja the PIP package provides the python module but not always the
+    # system `ninja` binary flashinfer's JIT invokes; the apt package is the
+    # reliable one. Harmless if already present.
+    command -v ninja >/dev/null || (command -v apt-get >/dev/null && apt-get install -y -qq ninja-build) || true
     # The freeze is the audit trail that replaces the image digest.
     "$pip" freeze > "env/${engine}-freeze.txt"
     "$VENV_DIR/$engine/bin/python" -c \
