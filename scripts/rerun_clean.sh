@@ -35,25 +35,27 @@ source ./run.sh          # up()/down()/cell()/base_url(), no dispatch
 trap down EXIT
 log() { printf '\n=== %s\n' "$*" >&2; }
 
-# --- decision inputs: fill from repilot.sh, then remove the guard trip --------
-declare -A RATE_LOW=( [full-reuse]=-1 [cold]=-1 [partial-reuse]=-1 )
-declare -A RATE_MID=( [full-reuse]=-1 [cold]=-1 [partial-reuse]=-1 )
-# Target completions per cell. Full/Partial: ~1000 for a powered p99.
-# Cold: capped (p95 only, by design).
-declare -A TARGET=( [full-reuse]=1000 [cold]=380 [partial-reuse]=1000 )
-declare -A MINSEC=( [full-reuse]=0 [cold]=600 [partial-reuse]=0 )
+# --- decision inputs: filled from the re-pilot (scripts/repilot.sh) ------------
+# Re-pilot knees (ttft_growth>2.0 signal), and each engine's highest 120s
+# CONFIRMED-healthy pilot rate (growth < 1.3):
+#   full-reuse    vLLM k=4.12 (healthy<=3.24)  SGLang k=1.88 (healthy<=1.80)  k_min=1.88
+#   cold          vLLM k=1.30 (healthy<=0.97)  SGLang k=0.72 (healthy<=0.54)  k_min=0.72
+#   partial-reuse vLLM k=1.14 (healthy<=1.08)  SGLang k=1.21 (healthy<=1.08)  k_min=1.14
+# Clean rates are chosen BELOW k_min AND below the both-engine healthy ceiling,
+# with margin because the re-run cells run 3-4x longer than the 120s pilot and a
+# near-knee rate that survives 120s can still collapse over a long run (the D4
+# lesson). Cold is the cache-OFF baseline (H2 is a single-point within-10% test,
+# not a gap-vs-rate curve), so it gets ONE rate, not two.
+declare -A RATE_LOW=( [full-reuse]=0.94 [partial-reuse]=0.60 )   # ~0.5 k_min
+declare -A RATE_MID=( [full-reuse]=1.50 [cold]=0.48 [partial-reuse]=0.90 )  # ~0.66-0.8 k_min
+declare -A BANDS=( [full-reuse]="low mid" [cold]="mid" [partial-reuse]="low mid" )
+# Target completions per cell. Full/Partial: >=500 (SPEC's p99-reportable
+# threshold; n=3 supplies the variance the original single 1000-run couldn't).
+# Cold: fewer, p95 by design (its low arrival rate makes 500 cost ~25 min/cell).
+declare -A TARGET=( [full-reuse]=500 [cold]=300 [partial-reuse]=500 )
+declare -A MINSEC=( [full-reuse]=0 [cold]=0 [partial-reuse]=0 )
 REPS=3
 # ------------------------------------------------------------------------------
-
-for w in full-reuse cold partial-reuse; do
-  for tbl in "${RATE_LOW[$w]}" "${RATE_MID[$w]}"; do
-    if [ "$tbl" = "-1" ]; then
-      echo "FATAL: rate grid still has placeholders. Fill RATE_LOW/RATE_MID" >&2
-      echo "       from repilot.sh output (both must be < kappa_min)." >&2
-      exit 1
-    fi
-  done
-done
 
 # A clean cell: restart the engine (cold flags for Cold), one client run,
 # validity re-check. Mirrors run.sh cell() but forces a fresh server each time.
@@ -72,7 +74,7 @@ clean_cell() {
 
 for w in full-reuse cold partial-reuse; do
   for engine in vllm sglang; do
-    for band in low mid; do
+    for band in ${BANDS[$w]}; do
       declare -n TBL="RATE_${band^^}"
       rate="${TBL[$w]}"
       for rep in $(seq 1 "$REPS"); do

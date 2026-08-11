@@ -33,7 +33,7 @@ trap down EXIT
 log() { printf '\n=== %s\n' "$*" >&2; }
 
 # Fill from repilot.sh: each workload's clean low rate (below BOTH kappas).
-declare -A CLEAN_RATE=( [full-reuse]=-1 [partial-reuse]=-1 )
+declare -A CLEAN_RATE=( [full-reuse]=1.50 [partial-reuse]=0.90 )
 REPS=3
 mkdir -p gates/sglang-graph-ab
 

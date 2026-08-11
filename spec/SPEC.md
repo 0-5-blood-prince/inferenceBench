@@ -340,15 +340,30 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
 >   whose primary signal was completion ratio (+ an 8× TTFT-blowup backstop) —
 >   the same completion-ratio blindness that later mis-tagged 16 of 28 cells.
 >   `scripts/pilot.py` now uses `ttft_growth_ratio > 2.0` as the **primary**
->   knee signal, so `κ` is calibrated by the matrix's own rule. The re-run
->   samples **two rates both below `min(κ_vllm, κ_sglang)`** per workload (a low
->   and a mid point), **n=3 at each**, replacing the variance block that was
+>   knee signal, so `κ` is calibrated by the matrix's own rule. The re-pilot
+>   ([`scripts/repilot.sh`](../scripts/repilot.sh)) found SGLang's knee is only
+>   ~45–55 % of vLLM's on the cache workloads (full-reuse 4.12 vs 1.88,
+>   cold 1.30 vs 0.72, partial-reuse 1.14 vs 1.21 req/s) — quantifying why the
+>   old shared grid put `0.8κ` past SGLang's knee. The re-run
+>   ([`scripts/rerun_clean.sh`](../scripts/rerun_clean.sh)) samples clean rates
+>   chosen **below `min(κ_vllm, κ_sglang)` and below each engine's confirmed-
+>   healthy pilot rate**, **n=3 at each**, replacing the variance block that was
 >   spent entirely at the saturated `0.8κ`/`1.2κ` points (variance measured
->   where no verdict is drawn). Run length is lifted so Full reuse and Partial
->   reuse clear **≥1000 completions** (a powered p99); Cold stays wall-clock
->   capped and **reports p95, pre-registered here** — its arrival rate makes
->   ≥1000 completions cost ~30 min/cell, and p99 for Cold is accepted as
->   underpowered by design rather than chased.
+>   where no verdict is drawn). Design, revised from the pre-re-pilot draft now
+>   that the real knees are known:
+>   - **Full reuse & Partial reuse (the cache workloads): two clean rates**
+>     (~0.5 and ~0.75 `κ_min`) so gap-vs-rate has two points, **≥500 completions
+>     per cell** — SPEC's own p99-reportable threshold below; n=3 supplies the
+>     variance the original single long run could not, which is a better use of
+>     the time budget than one 1000-completion run.
+>   - **Cold (the cache-OFF baseline): one clean rate.** H2 is a single-point
+>     "within 10 %" test, not a gap-vs-rate curve, so a second rate buys nothing;
+>     ~300 completions, **p95 reported, pre-registered here** — Cold's low
+>     arrival rate makes larger samples cost ~25 min/cell and p99 for Cold is
+>     accepted as underpowered rather than chased.
+>   (The earlier draft said "two rates both below κ_min, ≥1000 completions" for
+>   all three; revised here before the run, with the reason stated, per the
+>   amendment discipline.)
 > - **D3 — cache isolation between rate cells.** Prometheus counters were
 >   continuous across a workload's rate cells (no restart between them), and
 >   `--no-enable-prefix-caching` disables vLLM's KV prefix cache but **not** its
