@@ -188,6 +188,14 @@ async def run(args) -> dict:
     connector = aiohttp.TCPConnector(limit=0)
     offered = 0
     wall_start = time.perf_counter()
+    # Wall-clock (epoch) at which the MEASURED window begins, i.e. the first
+    # non-warmup request is dispatched. check_jit_contamination.py compares this
+    # against the engine log's JIT-warning timestamps so that a JIT compile
+    # absorbed by WARMUP (the intended, harmless case that a longer warmup
+    # creates for these fixed-shape workloads) is not mistaken for one that
+    # actually landed inside the measured window. Without this the check flags
+    # any JIT event in the run and re-creates the one-sided vLLM exclusion (D1).
+    measured_start_epoch = None
 
     # Ran dry vs stopped on purpose: `rows` is a hard ceiling `_done()` cannot
     # override. If the loop exhausts every row without `_done()` ever firing,
@@ -202,6 +210,8 @@ async def run(args) -> dict:
             for idx, row in enumerate(rows):
                 if _done(idx, args, wall_start):
                     break
+                if idx == args.warmup:
+                    measured_start_epoch = time.time()
                 await one_request(session, url, args.model, row, idx,
                                   idx < args.warmup, results, args.image_tokens)
                 offered += 1
@@ -218,6 +228,8 @@ async def run(args) -> dict:
                 delay = elapsed - (time.perf_counter() - wall_start)
                 if delay > 0:
                     await asyncio.sleep(delay)
+                if idx == args.warmup:
+                    measured_start_epoch = time.time()
                 tasks.append(asyncio.create_task(
                     one_request(session, url, args.model, row, idx,
                                 idx < args.warmup, results, args.image_tokens)))
@@ -228,7 +240,8 @@ async def run(args) -> dict:
                 await asyncio.gather(*tasks)
 
     wall = time.perf_counter() - wall_start
-    return summarize(args, results, offered, wall, rows_exhausted)
+    return summarize(args, results, offered, wall, rows_exhausted,
+                     measured_start_epoch)
 
 
 def _done(idx: int, args, wall_start: float) -> bool:
@@ -269,7 +282,8 @@ def ttft_growth_ratio(ok):
     return (statistics.median(second) / m1) if m1 > 0 else None
 
 
-def summarize(args, results, offered, wall, rows_exhausted=False) -> dict:
+def summarize(args, results, offered, wall, rows_exhausted=False,
+              measured_start_epoch=None) -> dict:
     ok = [r for r in results if r["error"] is None and r["ttft_s"] is not None]
     ttfts = [r["ttft_s"] for r in ok]
     # ITL/TPOT: average gap between consecutive decoded tokens, pooled across
@@ -318,6 +332,7 @@ def summarize(args, results, offered, wall, rows_exhausted=False) -> dict:
         "concurrency": args.concurrency,
         "seed": args.seed,
         "warmup": args.warmup,
+        "measured_start_epoch": measured_start_epoch,
         "offered": measured_offered,
         "completed": len(ok),
         "failed": len(results) - len(ok),

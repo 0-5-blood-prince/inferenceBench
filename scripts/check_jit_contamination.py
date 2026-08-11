@@ -27,13 +27,31 @@ the result JSON's summary.tags in place if contamination is found.
 """
 
 import argparse
+import calendar
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 PATTERN = re.compile(r"JIT compilation during inference|jit_monitor.*WARNING",
                      re.IGNORECASE)
+# vLLM/SGLang log lines carry a "MM-DD HH:MM:SS" timestamp in the container's
+# clock (UTC on these pods). Parse it to an epoch so a JIT event can be placed
+# before or after the measured window began.
+TS = re.compile(r"\b(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\b")
+
+
+def line_epoch(line: str, year: int) -> float | None:
+    m = TS.search(line)
+    if not m:
+        return None
+    mo, da, hh, mm, ss = (int(x) for x in m.groups())
+    try:
+        # UTC on these pods (Etc/UTC); calendar.timegm treats the tuple as UTC.
+        return calendar.timegm((year, mo, da, hh, mm, ss, 0, 0, 0))
+    except (ValueError, OverflowError):
+        return None
 
 
 def main() -> None:
@@ -53,11 +71,33 @@ def main() -> None:
 
     lines = log_path.read_text(errors="replace").splitlines()
     new_lines = lines[args.since_line:]
-    hits = [l for l in new_lines if PATTERN.search(l)]
+    all_hits = [l for l in new_lines if PATTERN.search(l)]
 
     result_path = Path(args.result)
     payload = json.loads(result_path.read_text())
     summary = payload["summary"]
+
+    # A JIT compile absorbed by WARMUP is the intended, harmless case for these
+    # fixed-shape workloads (the compile fires once on the first request of a
+    # shape and never again). Only a compile that fires INSIDE the measured
+    # window injects a latency spike into the reported percentiles. Use the
+    # client-recorded measured-window start (summary.measured_start_epoch) to
+    # keep only the hits at/after it; without that field (older runs), fall back
+    # to the original behaviour of flagging any hit in the slice.
+    measured_start = summary.get("measured_start_epoch")
+    if measured_start is not None:
+        year = time.gmtime(measured_start).tm_year
+        # -2s guard: the log line is written a moment after the event; do not let
+        # sub-second/rounding place a genuine measured-window event just before.
+        cutoff = measured_start - 2
+        hits = [l for l in all_hits
+                if (line_epoch(l, year) is None or line_epoch(l, year) >= cutoff)]
+        warmup_only = len(all_hits) - len(hits)
+        if warmup_only:
+            print(f"note: {warmup_only} JIT event(s) fell in warmup (ignored) in "
+                  f"{args.result}")
+    else:
+        hits = all_hits
 
     if hits:
         summary.setdefault("tags", [])

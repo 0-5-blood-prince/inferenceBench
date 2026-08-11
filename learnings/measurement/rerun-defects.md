@@ -102,18 +102,34 @@ unavoidable for this model. It guards against a silent re-disable (server up but
 log still says "disabling prefill CUDA graph" ⇒ the flag didn't take, knee is
 effectively stock).
 
-## D1 — one-sided JIT contamination (noted, cured for free)
+## D1 — one-sided JIT contamination (fixed at the tagging layer, found mid-re-run)
 
-All four vLLM clean-rate cells carry `jit_contaminated`; all four SGLang
-counterparts are clean — an exclusion perfectly correlated with engine
-identity, the one confound an engine comparison cannot absorb. Not given a
-separate fix because the D4 re-run cures it as a side effect (same runs, longer
-warmup so the Triton `kernel_unified_attention` compile lands before the
-measured window). Direction of every affected verdict is safe regardless: the
-contamination biases *against* vLLM, the winner, and the text-only n=3 blocks
-bracket the size — rep1 was contaminated, rep2/rep3 were not, and p50 differed
-by ~1–2 %. The finding is probably right; the re-run is what makes it
-admissible.
+All four vLLM clean-rate cells carried `jit_contaminated`; all four SGLang
+counterparts were clean — an exclusion perfectly correlated with engine
+identity, the one confound an engine comparison cannot absorb. Direction of
+every affected verdict was already safe (the contamination biases *against*
+vLLM, the winner; the text-only n=3 blocks showed rep1 contaminated,
+rep2/rep3 not, p50 differing ~1–2 %), but "safe direction" is not "admissible."
+
+The re-run's first cell exposed the real problem, which longer warmup alone does
+**not** fix: `check_jit_contamination.py` scanned the whole log slice
+(warmup + measured) and flagged a JIT event wherever it fired. For these
+fixed-shape workloads the `kernel_unified_attention` compile fires **once**, on
+the first request of a shape — i.e. in warmup — and never again, so the measured
+window is clean (rep1: p99 316 ms, `ttft_growth_ratio` 0.991, no spike) yet the
+cell was still tagged `jit_contaminated`. Longer warmup (50) reliably pushes the
+compile into warmup, but the check couldn't tell warmup JIT from measured JIT,
+so it kept mis-tagging clean vLLM cells — D1, reborn.
+
+Real fix, two parts: `client.py` now records `measured_start_epoch` (wall-clock
+when the first non-warmup request is dispatched), and
+`check_jit_contamination.py` parses each JIT log line's `MM-DD HH:MM:SS`
+timestamp (UTC on these pods) and tags **only** events at/after that epoch (−2 s
+guard). A warmup-absorbed compile is now correctly ignored; one that actually
+lands in the measured window is still caught. Because the restart-per-cell
+overwrites the engine log, this has to be right at run time — it cannot be a
+post-hoc retag like the `ttft_growth` one — so it was fixed before restarting
+the clean re-run (cost: one redone cell).
 
 ## Why one re-run, pre-registered
 
