@@ -78,8 +78,19 @@ for w in full-reuse cold partial-reuse; do
       declare -n TBL="RATE_${band^^}"
       rate="${TBL[$w]}"
       for rep in $(seq 1 "$REPS"); do
+        run_id="${w}_${engine}_${band}_rep${rep}"
+        result="workloads/$w/results/${run_id}.json"
+        # Resume-safe: a cell whose result already exists AND parses as a
+        # completed run is skipped, so a restart after an interruption (host
+        # reclaim, out-of-funds exit) picks up where it left off instead of
+        # redoing hours of clean cells. Set RERUN_FORCE=1 to redo everything.
+        if [ "${RERUN_FORCE:-0}" != 1 ] && [ -f "$result" ] && \
+           "$CLIENT_PY" -c "import json,sys; d=json.load(open('$result')); sys.exit(0 if d.get('summary',{}).get('completed',0)>0 else 1)" 2>/dev/null; then
+          log "skip (already done): $run_id"
+          continue
+        fi
         log "clean re-run: $w / $engine / ${band}(${rate}) rep${rep}"
-        clean_cell "$w" "$engine" "$rate" "${w}_${engine}_${band}_rep${rep}"
+        clean_cell "$w" "$engine" "$rate" "$run_id"
       done
     done
   done

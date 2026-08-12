@@ -41,9 +41,23 @@ for w in full-reuse partial-reuse; do
   [ "${CLEAN_RATE[$w]}" = "-1" ] && { echo "FATAL: set CLEAN_RATE[$w] from repilot.sh" >&2; exit 1; }
 done
 
+arm_done() {
+  # An arm's cell for a workload counts as done when all REPS results exist.
+  local arm="$1" w="$2" rep
+  for rep in $(seq 1 "$REPS"); do
+    local r="workloads/$w/results/${w}_sglang_${arm}_rep${rep}.json"
+    [ -f "$r" ] && "$CLIENT_PY" -c "import json,sys; sys.exit(0 if json.load(open('$r')).get('summary',{}).get('completed',0)>0 else 1)" 2>/dev/null || return 1
+  done
+  return 0
+}
+
 run_arm() {
   local arm="$1" extra="$2"
   for w in full-reuse partial-reuse; do
+    if [ "${RERUN_FORCE:-0}" != 1 ] && arm_done "$arm" "$w"; then
+      log "skip (already done): graph A/B [$arm] $w"
+      continue
+    fi
     log "graph A/B [$arm]: $w / sglang"
     SGLANG_EXTRA_FLAGS="$extra" up sglang
     # Preserve the startup log so the capture outcome (success or fault) is on
