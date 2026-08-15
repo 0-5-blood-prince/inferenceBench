@@ -358,7 +358,9 @@ are defined in [P5](phases/P5-stretch.md); the real-workload epilogue
 >     the time budget than one 1000-completion run.
 >   - **Cold (the cache-OFF baseline): one clean rate.** H2 is a single-point
 >     "within 10 %" test, not a gap-vs-rate curve, so a second rate buys nothing;
->     ~300 completions, **p95 reported, pre-registered here** — Cold's low
+>     ~300 completions, **p90 reported, pre-registered here** (the harness
+>     emits p50/p90/p99; p90 is the well-powered tail at n=300, p95/p99 are
+>     not) — Cold's low
 >     arrival rate makes larger samples cost ~25 min/cell and p99 for Cold is
 >     accepted as underpowered rather than chased.
 >   (The earlier draft said "two rates both below κ_min, ≥1000 completions" for

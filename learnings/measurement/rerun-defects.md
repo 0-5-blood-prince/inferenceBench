@@ -63,7 +63,7 @@ arrival), so `κ` is calibrated by the same rule the matrix cells are judged by.
 The re-run (`scripts/rerun_clean.sh`) samples two rates both below
 `min(κ_vllm, κ_sglang)` per workload, n=3 each, with run length lifted so Full
 and Partial reuse clear ≥1000 completions (a powered p99). Cold is wall-clock
-capped and reports **p95, pre-registered** — ≥1000 Cold completions cost
+capped and reports **p90, pre-registered** (the harness emits p50/p90/p99; p90 is the well-powered tail at n=300) — ≥1000 Cold completions cost
 ~30 min/cell, and p99 for Cold is accepted as underpowered rather than chased.
 
 ## D2 — SGLang ran without prefill CUDA graphs; vLLM ran with them

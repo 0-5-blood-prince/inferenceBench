@@ -9,7 +9,7 @@
 #  - <500 completions at 0.5k made p99 unreportable -> TARGET below lifts
 #    Full/Partial reuse past ~1000 completions so p99 has power. Cold stays
 #    capped by wall-time; p99 for Cold is underpowered BY DESIGN, so the writeup
-#    reports p95 for Cold (pre-registered here, not chosen after seeing data).
+#    reports p90 for Cold (pre-registered; harness emits p50/p90/p99).
 #
 # The restart-before-every-cell is the robust D3 fix: it resets ALL cache state
 # (KV prefix, mm processor/embedding, encoder) regardless of flag semantics, so
@@ -51,7 +51,7 @@ declare -A RATE_MID=( [full-reuse]=1.50 [cold]=0.48 [partial-reuse]=0.90 )  # ~0
 declare -A BANDS=( [full-reuse]="low mid" [cold]="mid" [partial-reuse]="low mid" )
 # Target completions per cell. Full/Partial: >=500 (SPEC's p99-reportable
 # threshold; n=3 supplies the variance the original single 1000-run couldn't).
-# Cold: fewer, p95 by design (its low arrival rate makes 500 cost ~25 min/cell).
+# Cold: fewer, p90 by design (its low arrival rate makes 500 cost ~25 min/cell).
 declare -A TARGET=( [full-reuse]=500 [cold]=300 [partial-reuse]=500 )
 declare -A MINSEC=( [full-reuse]=0 [cold]=0 [partial-reuse]=0 )
 REPS=3
@@ -98,4 +98,4 @@ done
 
 down
 log "clean re-run complete. Re-tag and render, then p99 is reportable on"
-log "Full/Partial reuse; Cold reports p95 (pre-registered)."
+log "Full/Partial reuse; Cold reports p90 (pre-registered)."

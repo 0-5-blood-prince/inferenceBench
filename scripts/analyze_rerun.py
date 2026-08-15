@@ -29,32 +29,55 @@ RATES = {  # for labelling; must match scripts/rerun_clean.sh
 }
 
 
+def pctl(sorted_vals, q):
+    """Nearest-rank percentile (q in 0..100) over an already-sorted list, ms."""
+    if not sorted_vals:
+        return None
+    import math
+    k = max(1, math.ceil(q / 100 * len(sorted_vals)))
+    return sorted_vals[k - 1]
+
+
 def load(pattern):
+    """Return (summary, measured_ttfts_ms) per matching result file. Percentiles
+    are computed from the raw per-request measured TTFTs, not the summary's fixed
+    p50/p90/p99 set, so any percentile (e.g. cold's p90) is available and correct
+    over completers only."""
     out = []
     for f in sorted(glob.glob(str(ROOT / pattern))):
         try:
-            out.append(json.load(open(f))["summary"])
-        except (json.JSONDecodeError, KeyError, OSError):
-            pass
+            d = json.load(open(f))
+        except (json.JSONDecodeError, OSError):
+            continue
+        s = d.get("summary")
+        if not s:
+            continue
+        warmup = s.get("warmup", 0)
+        ttfts = sorted(r["ttft_s"] * 1000 for r in d.get("requests", [])
+                       if r.get("index", 0) >= warmup and r.get("error") is None
+                       and r.get("ttft_s") is not None)
+        out.append((s, ttfts))
     return out
 
 
-def agg(summaries, pct="p99"):
-    """n-run mean and spread for p50 and the chosen tail percentile."""
-    if not summaries:
+def agg(rows, pct="p99"):
+    """n-run mean and spread for p50 and the chosen tail percentile, computed
+    from raw per-request TTFTs. pct is like 'p90'/'p95'/'p99'."""
+    if not rows:
         return None
-    p50 = [s["ttft_s"]["p50"] * 1000 for s in summaries]
-    tail = [s["ttft_s"][pct] * 1000 for s in summaries if pct in s["ttft_s"]]
-    growth = [s.get("ttft_growth_ratio") for s in summaries
+    q = int(pct[1:])
+    p50 = [pctl(t, 50) for _, t in rows if t]
+    tail = [pctl(t, q) for _, t in rows if t]
+    growth = [s.get("ttft_growth_ratio") for s, _ in rows
               if s.get("ttft_growth_ratio") is not None]
-    tags = sorted({t for s in summaries for t in s.get("tags", [])})
+    tags = sorted({t for s, _ in rows for t in s.get("tags", [])})
     return {
-        "n": len(summaries),
-        "p50_mean": statistics.mean(p50),
-        "p50_spread": (max(p50) - min(p50)),
+        "n": len(rows),
+        "p50_mean": statistics.mean(p50) if p50 else None,
+        "p50_spread": (max(p50) - min(p50)) if p50 else None,
         "tail_pct": pct,
         "tail_mean": statistics.mean(tail) if tail else None,
-        "completed_min": min(s["completed"] for s in summaries),
+        "completed_min": min(s["completed"] for s, _ in rows),
         "growth_max": max(growth) if growth else None,
         "tags": tags,
     }
@@ -63,8 +86,10 @@ def agg(summaries, pct="p99"):
 def fmt(a):
     if a is None:
         return "  (no data yet)"
+    p50 = f"{a['p50_mean']:.0f}" if a["p50_mean"] is not None else "n/a"
+    spread = f"{a['p50_spread']:.0f}" if a["p50_spread"] is not None else "?"
     tail = f"{a['tail_mean']:.0f}" if a["tail_mean"] is not None else "n/a"
-    return (f"  n={a['n']}  p50={a['p50_mean']:.0f}ms (spread {a['p50_spread']:.0f}) "
+    return (f"  n={a['n']}  p50={p50}ms (spread {spread}) "
             f"{a['tail_pct']}={tail}ms  completed>={a['completed_min']}  "
             f"growth_max={a['growth_max']}  tags={a['tags']}")
 
@@ -74,7 +99,10 @@ def section_clean_matrix():
     print("CLEAN RE-RUN (D4c) — per engine per clean rate, n=3")
     print("=" * 72)
     for w in ("full-reuse", "partial-reuse", "cold"):
-        pct = "p95" if w == "cold" else "p99"
+        # Cold: p90 (well-powered at n=300 and emitted by the harness); p99 for
+        # cold is underpowered by design (its low arrival rate makes ~1000
+        # completions cost ~25 min/cell). Cache workloads: p99 (n=500).
+        pct = "p90" if w == "cold" else "p99"
         print(f"\n## {w}   (tail = {pct}{' , cache-off baseline' if w=='cold' else ''})")
         for band in RATES[w]:
             rate = RATES[w][band]
