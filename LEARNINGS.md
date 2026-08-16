@@ -70,6 +70,12 @@ false engine asymmetry.
   symmetric on both engines, and a newly surfaced third mechanism candidate
   (vLLM's decode-prioritizing scheduler admitting nearly-free cached
   prefills vs SGLang's retract-and-re-prefill loop)
+- [rerun-results.md](learnings/measurement/rerun-results.md) — the corrected
+  re-run's results and mechanism attribution: vLLM leads TTFT 43–71% at clean
+  load on every workload, and four hypotheses are ruled out with data (not
+  caching — Cold cache-off still +43%; not decode — ITL identical; not the
+  prefill-graph disable — forcing it on moves TTFT −1.5% and the knee 0%; only
+  ~⅓ multimodal). The whole effect is localized to the prefill/TTFT path
 - [rerun-defects.md](learnings/measurement/rerun-defects.md) — four defects
   found auditing the *finished* matrix (no restart between rate cells so Cold
   wasn't cold above 0.5κ; knee miscalibrated so only 0.5κ survived, at n=1;

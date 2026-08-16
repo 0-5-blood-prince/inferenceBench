@@ -1,18 +1,18 @@
 {
   "workload": "partial-reuse",
   "engine": "sglang",
-  "kappa": 1.21,
+  "kappa": 1.199,
   "note": "complete",
   "points": [
     {
       "rate": 0.6,
       "completion_ratio": 1.0,
-      "ttft_p50_s": 0.483308307826519,
+      "ttft_p50_s": 0.49056390672922134,
       "offered": 79,
       "completed": 79,
-      "ttft_growth_ratio": 1.0311115361924683,
-      "tokens_per_second": 58.087,
-      "tokens_per_second_per_user": 17.444,
+      "ttft_growth_ratio": 0.9807594091694181,
+      "tokens_per_second": 58.097,
+      "tokens_per_second_per_user": 17.451,
       "isl_tokens_p50": 1009,
       "osl_tokens_p50": 128,
       "image_tokens_p50": 256,
@@ -51,12 +51,12 @@
     {
       "rate": 1.08,
       "completion_ratio": 1.0,
-      "ttft_p50_s": 0.5546305105090141,
+      "ttft_p50_s": 0.551103413105011,
       "offered": 142,
       "completed": 142,
-      "ttft_growth_ratio": 1.094277475461877,
-      "tokens_per_second": 112.322,
-      "tokens_per_second_per_user": 13.355,
+      "ttft_growth_ratio": 1.1798633858792915,
+      "tokens_per_second": 112.355,
+      "tokens_per_second_per_user": 13.305,
       "isl_tokens_p50": 1009,
       "osl_tokens_p50": 128,
       "image_tokens_p50": 256,
@@ -96,12 +96,12 @@
     {
       "rate": 1.9440000000000002,
       "completion_ratio": 1.0,
-      "ttft_p50_s": 11.983533933758736,
+      "ttft_p50_s": 12.209743037819862,
       "offered": 256,
       "completed": 256,
-      "ttft_growth_ratio": 7.122453778080101,
-      "tokens_per_second": 174.63,
-      "tokens_per_second_per_user": 5.301,
+      "ttft_growth_ratio": 7.158555271014875,
+      "tokens_per_second": 174.027,
+      "tokens_per_second_per_user": 5.266,
       "isl_tokens_p50": 1009,
       "osl_tokens_p50": 128,
       "image_tokens_p50": 256,
@@ -127,8 +127,8 @@
         "sglang:token_usage": 0.0,
         "sglang:full_token_usage": 0.0,
         "sglang:num_used_tokens": 0.0,
-        "sglang:kv_available_tokens": 224.0,
-        "sglang:kv_evictable_tokens": 16018.0,
+        "sglang:kv_available_tokens": 645.0,
+        "sglang:kv_evictable_tokens": 15597.0,
         "sglang:max_total_num_tokens": 16242.0,
         "sglang:num_running_reqs": 0.0,
         "sglang:num_queue_reqs": 0.0
@@ -140,8 +140,8 @@
     }
   ],
   "rate_grid": {
-    "0.5k": 0.605,
-    "0.8k": 0.968,
-    "1.2k": 1.452
+    "0.5k": 0.599,
+    "0.8k": 0.959,
+    "1.2k": 1.438
   }
 }
