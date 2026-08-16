@@ -46,16 +46,24 @@ run_variant() {
   done
 }
 
-# torch.compile is the decisive test (vLLM compiles by default, SGLang eager).
-# TF32 dropped: research confirmed it's a red herring - Gemma runs bf16 and
-# enable_tf32_matmul only affects fp32 matmuls, so it cannot move this gap.
-# NB: SGLang v0.5.x torch.compile is decode/CUDA-graph-oriented and the prefill
-# graph is auto-disabled for this multimodal model, so compile may not fully
-# engage on prefill - a null result here is itself informative (config alone
-# does not close it on this version). Expect a multi-minute compile warmup.
-for workload in full-reuse cold; do
-  run_variant compile "--enable-torch-compile" "$workload"
+# Sweep SGLang's compute-relevant levers vs vLLM's compiled default (132ms) and
+# SGLang stock (244ms) at conc=1. TF32 dropped (red herring: bf16 model).
+# Variants:
+#   compile     torch.compile/Inductor (vLLM's on-by-default lever; SGLang eager)
+#   flashinfer  swap Triton -> FlashInfer attention (SGLang docs favor it for speed;
+#               NB Gemma-4 multimodal image attention may need Triton for
+#               correctness - a wrong-but-timed run still shows the kernel's speed)
+#   fa3         FlashAttention-3 backend (may be unsupported on A100/SM80)
+#   compilefi   compile + flashinfer together
+# full-reuse gets the full sweep (primary comparison); cold gets compile only
+# (purest uncached prefill, to see if compile helps the compute-heavy path).
+for v in "compile:--enable-torch-compile" \
+         "flashinfer:--attention-backend flashinfer" \
+         "fa3:--attention-backend fa3" \
+         "compilefi:--enable-torch-compile --attention-backend flashinfer"; do
+  run_variant "${v%%:*}" "${v#*:}" full-reuse
 done
+run_variant compile "--enable-torch-compile" cold
 
 down
 log "config-test complete. Compare against stock conc=1 (full-reuse sglang 249ms):"
@@ -67,7 +75,7 @@ for w in ("full-reuse","cold"):
     stock=p50(f"decomp/{w}_sglang_conc1_rep*.json")
     vllm=p50(f"decomp/{w}_vllm_conc1_rep*.json")
     print(f"\n{w}: vLLM={round(statistics.mean(vllm)) if vllm else '?'}ms  SGLang stock={round(statistics.mean(stock)) if stock else '?'}ms")
-    for tag in ("compile","compiletf","tf32"):
+    for tag in ("compile","flashinfer","fa3","compilefi"):
         v=p50(f"decomp/{w}_sglang_{tag}_conc1_rep*.json")
         if v: print(f"  SGLang [{tag}] = {round(statistics.mean(v))}ms  {[round(x) for x in v]}")
 PY
