@@ -46,10 +46,15 @@ run_variant() {
   done
 }
 
+# torch.compile is the decisive test (vLLM compiles by default, SGLang eager).
+# TF32 dropped: research confirmed it's a red herring - Gemma runs bf16 and
+# enable_tf32_matmul only affects fp32 matmuls, so it cannot move this gap.
+# NB: SGLang v0.5.x torch.compile is decode/CUDA-graph-oriented and the prefill
+# graph is auto-disabled for this multimodal model, so compile may not fully
+# engage on prefill - a null result here is itself informative (config alone
+# does not close it on this version). Expect a multi-minute compile warmup.
 for workload in full-reuse cold; do
-  run_variant compile   "--enable-torch-compile"                        "$workload"
-  run_variant compiletf "--enable-torch-compile --enable-tf32-matmul"   "$workload"
-  run_variant tf32      "--enable-tf32-matmul"                          "$workload"
+  run_variant compile "--enable-torch-compile" "$workload"
 done
 
 down
