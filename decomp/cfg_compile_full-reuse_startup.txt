@@ -1,0 +1,2 @@
+SingleProcess AUTOTUNE benchmarking takes 4.0689 seconds and 0.5389 seconds precompiling for 19 choices
+[2026-08-16 19:51:11] Capture target decode CUDA graph end. elapsed=582.10 s, mem usage=0.92 GB, avail mem=6.80 GB.

@@ -76,6 +76,14 @@ false engine asymmetry.
   caching — Cold cache-off still +43%; not decode — ITL identical; not the
   prefill-graph disable — forcing it on moves TTFT −1.5% and the knee 0%; only
   ~⅓ multimodal). The whole effect is localized to the prefill/TTFT path
+- [prefill-decomposition.md](learnings/measurement/prefill-decomposition.md) —
+  the prefill-vs-queue split rerun-results deferred, now done: at concurrency=1
+  (no queue) SGLang's prefill compute alone is +85% (full reuse) / +49% (cold),
+  while the queue component is symmetric within ~6 ms — so the whole gap is
+  prefill compute, not scheduler/admission overhead. Plus a config sweep proving
+  no SGLang lever closes it (torch.compile only compiles decode = 0%; forcing the
+  prefill CUDA graph on, capture confirmed, is −0…+5%; FlashInfer/FA3 are refused
+  because Gemma-4 pins attention to Triton), and a layer-wise attribution table
 - [rerun-defects.md](learnings/measurement/rerun-defects.md) — four defects
   found auditing the *finished* matrix (no restart between rate cells so Cold
   wasn't cold above 0.5κ; knee miscalibrated so only 0.5κ survived, at n=1;
