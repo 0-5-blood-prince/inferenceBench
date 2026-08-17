@@ -1,0 +1,9 @@
+{"engine": "sglang", "device": "NVIDIA H100 NVL", "kv_heads": 16, "q_heads": 32, "head_dim": 256}
+{"engine": "sglang", "mode": "full_causal", "seqlen": 128, "median_ms": 0.0432, "tflops": 12.42}
+{"engine": "sglang", "mode": "full_causal", "seqlen": 512, "median_ms": 0.0657, "tflops": 130.82}
+{"engine": "sglang", "mode": "full_causal", "seqlen": 991, "median_ms": 0.1992, "tflops": 161.58}
+{"engine": "sglang", "mode": "full_causal", "seqlen": 2048, "median_ms": 0.7044, "tflops": 195.11}
+{"engine": "sglang", "mode": "sliding1024", "seqlen": 128, "median_ms": 0.0439, "tflops": 12.23}
+{"engine": "sglang", "mode": "sliding1024", "seqlen": 512, "median_ms": 0.0836, "tflops": 102.77}
+{"engine": "sglang", "mode": "sliding1024", "seqlen": 991, "median_ms": 0.2613, "tflops": 123.14}
+{"engine": "sglang", "mode": "sliding1024", "seqlen": 2048, "median_ms": 0.7223, "tflops": 190.27}

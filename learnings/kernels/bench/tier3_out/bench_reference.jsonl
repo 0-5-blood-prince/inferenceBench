@@ -1,0 +1,21 @@
+/root/venvs/sglang/lib/python3.12/site-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/base_dsl/dsl.py:2214: UserWarning: Argument aux_data (position 17) cannot be converted to a JitArgument for function 'cutlass___call___flash_attncuteflash_fwd_sm90FlashAttentionForwardSm90_object_at__Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_Tensorgmemoi64i64i641_None_00625'. Its type `<class 'flash_attn.cute.utils.AuxData'>` is not supported. If the value is known at compile time, annotate it: `aux_data: Constexpr`. Otherwise, implement the `JitArgument` or `DynamicExpression` protocol for type `<class 'flash_attn.cute.utils.AuxData'>`, or register a custom argument adapter.
+  exe_args, func_types, adapted_args = self.generate_mlir_function_types(
+{"tier": 1, "device": "NVIDIA H100 NVL", "kv_heads": 16, "q_heads": 32, "head_dim": 256, "window_keys": 1024}
+{"kernel": "flash_attn", "mode": "full_causal", "seqlen": 512, "median_ms": 0.0615, "tflops": 139.74}
+{"kernel": "flash_attn", "mode": "full_causal", "seqlen": 991, "median_ms": 0.0586, "tflops": 549.54}
+{"kernel": "flash_attn", "mode": "full_causal", "seqlen": 2048, "median_ms": 0.1933, "tflops": 710.85}
+{"kernel": "flash_attn", "mode": "sliding1024", "seqlen": 512, "median_ms": 0.0614, "tflops": 139.88}
+{"kernel": "flash_attn", "mode": "sliding1024", "seqlen": 991, "median_ms": 0.066, "tflops": 487.47}
+{"kernel": "flash_attn", "mode": "sliding1024", "seqlen": 2048, "median_ms": 0.1691, "tflops": 812.67}
+{"kernel": "flashinfer", "mode": "full_causal", "seqlen": 512, "median_ms": 0.0332, "tflops": 258.36}
+{"kernel": "flashinfer", "mode": "full_causal", "seqlen": 991, "median_ms": 0.0633, "tflops": 508.68}
+{"kernel": "flashinfer", "mode": "full_causal", "seqlen": 2048, "median_ms": 0.2083, "tflops": 659.95}
+{"kernel": "flashinfer", "mode": "sliding1024", "seqlen": 512, "median_ms": 0.0643, "tflops": 133.68}
+{"kernel": "flashinfer", "mode": "sliding1024", "seqlen": 991, "median_ms": 0.0776, "tflops": 414.7}
+{"kernel": "flashinfer", "mode": "sliding1024", "seqlen": 2048, "median_ms": 0.1747, "tflops": 786.77}
+{"kernel": "sdpa", "mode": "full_causal", "seqlen": 512, "median_ms": 0.0274, "tflops": 313.59}
+{"kernel": "sdpa", "mode": "full_causal", "seqlen": 991, "median_ms": 0.0651, "tflops": 494.66}
+{"kernel": "sdpa", "mode": "full_causal", "seqlen": 2048, "median_ms": 0.207, "tflops": 663.93}
+{"kernel": "sdpa", "mode": "sliding1024", "seqlen": 512, "median_ms": 0.0579, "tflops": 148.31}
+{"kernel": "sdpa", "mode": "sliding1024", "seqlen": 991, "median_ms": 0.2451, "tflops": 131.29}
+{"kernel": "sdpa", "mode": "sliding1024", "seqlen": 2048, "median_ms": 0.6189, "tflops": 222.08}

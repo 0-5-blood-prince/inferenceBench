@@ -78,6 +78,16 @@ specific, fixable inefficiency: SGLang's SWA handling adds a per-tile masking +
 `SKIP_TILE` reduction + data-dependent branch that defeats kernel pipelining, and
 never narrows the loop to the window.
 
+> **Hardware caveat (Tier 3, H100): the catastrophic penalty is Ampere-specific.**
+> On an H100 (Hopper) the *same* SGLang SWA kernel is only ~1.3× its own causal
+> path (0.261 vs 0.199 ms @ S=991), versus ~17× on the A100 — Hopper's async
+> pipeline hides the branch penalty. What persists on Hopper is the *general* gap:
+> SGLang's Triton runs ~3–4× off FlashInfer/FA (both causal and SWA). So the ~8×
+> end-to-end SWA deficit is real but **A100/Ampere-conditioned**; state it as such.
+> The config fix `trtllm_mha` needs **Blackwell (SM100)** — rejected on A100 *and*
+> H100 — so Triton is what runs on all pre-Blackwell GPUs. See
+> [bench/RESULTS_tier3_h100.md](bench/RESULTS_tier3_h100.md).
+
 ## Confirmed by patch — the diagnosis is exactly right
 
 A minimal patch making *only* the two edits above (`bench/patch_sglang_swa.py`,

@@ -1,0 +1,5 @@
+== Tier3 conc=1 TTFT (p50 ms) ==
+  full-reuse   triton        p50=110ms  reps=[117, 103]
+  cold         triton        p50=328ms  reps=[329, 327]
+  full-reuse   trtllm_mha    NO DATA
+  cold         trtllm_mha    NO DATA
