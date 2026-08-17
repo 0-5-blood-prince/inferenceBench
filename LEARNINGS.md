@@ -81,9 +81,13 @@ false engine asymmetry.
   (no queue) SGLang's prefill compute alone is +85% (full reuse) / +49% (cold),
   while the queue component is symmetric within ~6 ms — so the whole gap is
   prefill compute, not scheduler/admission overhead. Plus a config sweep proving
-  no SGLang lever closes it (torch.compile only compiles decode = 0%; forcing the
-  prefill CUDA graph on, capture confirmed, is −0…+5%; FlashInfer/FA3 are refused
-  because Gemma-4 pins attention to Triton), and a layer-wise attribution table
+  no *eager-compiler* SGLang lever closes it (torch.compile only compiles decode
+  = 0%; graph-capturing the eager prefill is −0…+5%; FlashInfer/FA3 refused because
+  Gemma-4 pins attention to Triton — on *both* engines, vLLM included), a
+  layer-wise attribution table, and the one genuinely untested lever the sweep
+  missed: an actual **Inductor-compiled** prefill (`--cuda-graph-tc-compiler
+  inductor`), the true vLLM analog, since every prior "prefill graph" run used the
+  default `tc_compiler=eager`
 - [rerun-defects.md](learnings/measurement/rerun-defects.md) — four defects
   found auditing the *finished* matrix (no restart between rate cells so Cold
   wasn't cold above 0.5κ; knee miscalibrated so only 0.5κ survived, at n=1;

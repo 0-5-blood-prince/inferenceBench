@@ -38,15 +38,41 @@ SGLang stock 244 ms / vLLM 132 ms:
 |---|---|---|---|
 | SGLang stock | 244 ms | — | eager, Triton attention |
 | `--enable-torch-compile` | 244 ms | **0%** | only compiles the *decode* path; prefill untouched |
-| `--cuda-graph-backend-prefill tc_piecewise` | 256 ms | **+5% (worse)** | prefill graph capture **confirmed engaged** (231 s capture, `num_tokens=[4…8192]`) — launch-overhead removal doesn't help a compute-bound kernel |
-| `--enable-torch-compile --cuda-graph-backend-prefill tc_piecewise` | 253 ms | **+4% (worse)** | compile + prefill graph together; still null |
+| `--cuda-graph-backend-prefill tc_piecewise` | 256 ms | **+5% (worse)** | graph capture confirmed (231 s, `num_tokens=[4…8192]`) — but **default `tc_compiler=eager`**: this captures a graph of the *eager* prefill, **not** Inductor-compiled (see below) |
+| `--enable-torch-compile --cuda-graph-backend-prefill tc_piecewise` | 253 ms | **+4% (worse)** | still `tc_compiler=eager`; `--enable-torch-compile` only touches decode, so this is again graph-of-eager |
+| `--cuda-graph-backend-prefill tc_piecewise --cuda-graph-tc-compiler inductor` | *measuring* | — | the **real vLLM analog** (Inductor-fused + graph); see next section |
 | `--attention-backend flashinfer` | rejected | — | Gemma-4 only supports trtllm_mha / triton / intel_xpu |
 | `--attention-backend fa3` | rejected | — | same rejection |
 
-The same variants on cold (uncached, purest prefill compute) tell the identical
-story against SGLang stock 724 ms: prefill graph 721 ms (**−0.4%**), compile +
-prefill graph 730 ms (**+1%**). Every lever is null within noise (±5%) on both
-workloads; n=2 each.
+The eager-compiler variants on cold (uncached, purest prefill compute) tell the
+identical story against SGLang stock 724 ms: prefill graph 721 ms (**−0.4%**),
+compile + prefill graph 730 ms (**+1%**). Every *graph-of-eager* lever is null
+within noise (±5%) on both workloads; n=2 each.
+
+## The real question: can the eager prefill be Inductor-compiled? (the vLLM analog)
+
+The tests above have a subtle hole, surfaced by asking directly "can eager prefill
+be converted into an Inductor-fused + graph-captured prefill like vLLM's?". The
+`tc_piecewise` prefill backend takes a `tc_compiler` that is
+`Literal["eager", "inductor"]` (`_VALID_COMPILERS`,
+[tc_piecewise_cuda_graph_backend.py]) — and its **default is `eager`**. The
+`--enable-torch-compile` flag does *not* change it (that flag is decode-only, via
+`torch_compile_max_bs`). So every prior "prefill graph" run captured a CUDA graph
+of the **eager** prefill; **none of them applied Inductor fusion.** They answer
+"does graph-capturing the eager prefill help?" (no), **not** "does an
+Inductor-compiled prefill help?".
+
+SGLang *does* expose the real analog: `--cuda-graph-tc-compiler inductor` with the
+`tc_piecewise` prefill backend calls `install_torch_compiled(..., compiler=
+"inductor")`, driving FX/Inductor through every prefill shape — the direct
+equivalent of vLLM's Inductor + `FULL_AND_PIECEWISE`. On CUDA/A100 this is *not*
+force-disabled (the force-to-`eager` path is NPU/Ascend-only,
+`_handle_npu_backends`). This is the config that was never run; it is being
+measured now (`scripts/inductor_prefill_test.sh`) and the result decides the
+verdict below.
+
+> **Result (Inductor-compiled prefill, conc=1):** _pending — measuring on the
+> pod; will report full-reuse & cold vs vLLM 132/485 and SGLang stock 244/724._
 
 Attention backend is **pinned to Triton for Gemma-4 on *both* engines** — a
 correction to an earlier assumption that vLLM used FlashAttention here. Verified
@@ -62,21 +88,20 @@ the whole Gemma-4 family, **including the text-only `Gemma4ForCausalLM`**
 kernel on this model, and the difference is *not* a different attention
 algorithm.
 
-**Verdict: the gap is a genuine SGLang v0.5.16 prefill-compute limitation for
-this model, not a default-config artifact — and it lives *within* the Triton
-attention family, not FA-vs-Triton.** Both engines run Triton attention; vLLM
-splits it out of the graph and fuses everything around it (RMSNorm, RoPE,
-Gemma-4's q/k/v-norms, MLP) via Inductor under a `FULL_AND_PIECEWISE` CUDA graph,
-while SGLang runs prefill eager: `--enable-torch-compile` targets SGLang's
-*decode* forward (governed by `torch_compile_max_bs=32`, verified in the server
-args), not the prefill/extend forward, and the prefill CUDA graph is disabled by
-default for this multimodal model. Prefill compilation is a *separate* path
-(`--cuda-graph-backend-prefill tc_piecewise`) — which is exactly what pfgraph /
-pfgraphc tested, and it is null/worse (above): a graph only removes launch
-overhead a compute-bound prefill doesn't pay, and enabling compile on top adds
-nothing to prefill. The operative difference is
-vLLM's Inductor-fused, graph-captured prefill stack (and its TRITON_ATTN kernel
-implementation) vs SGLang's eager Triton prefill stack.
+**Verdict (partial, pending the Inductor result above): the gap lives *within*
+the Triton attention family, not FA-vs-Triton.** Both engines run Triton
+attention; vLLM splits it out of the graph and fuses everything around it
+(RMSNorm, RoPE, Gemma-4's q/k/v-norms, MLP) via Inductor under a
+`FULL_AND_PIECEWISE` CUDA graph, while SGLang stock runs prefill **eager**. What
+is now firmly established: neither a different attention algorithm (both Triton),
+nor caching, nor decode, nor the queue explains it; and *graph-capturing the
+eager prefill* does not help. What remains open until the Inductor-prefill run
+lands: whether SGLang's eager prefill can be Inductor-compiled to close the gap
+(making it a config difference), or whether it stays ~244 ms even Inductor-fused
+(making it the Triton **kernel implementation** itself, vLLM's TRITON_ATTN vs
+SGLang's, plus fusion that Inductor can't recover). The earlier flat claim that
+"forcing SGLang's compile/graph on is null → genuine limitation, not config" was
+**overstated**: it only covered the eager-compiler path.
 
 ## Layer-wise attribution (hardware → request handling)
 

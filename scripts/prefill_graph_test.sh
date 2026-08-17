@@ -3,11 +3,14 @@
 #
 # torch.compile alone only compiled SGLang's DECODE path (prefill graph is
 # auto-disabled for this multimodal model), so it barely moved TTFT (-4%).
-# --cuda-graph-backend-prefill tc_piecewise ("tc" = torch-compile piecewise) is
-# what actually applies piecewise compilation to the PREFILL path - the direct
-# analog of vLLM's default FULL_AND_PIECEWISE. The graph A/B measured this at
-# LOADED rate (-1.5%); this measures it at concurrency=1 (pure prefill, no
-# queue), alone and combined with --enable-torch-compile.
+# --cuda-graph-backend-prefill tc_piecewise ("tc" = torch-compile piecewise)
+# CAPTURES a piecewise CUDA graph of the PREFILL path. NOTE: this alone uses the
+# DEFAULT tc_compiler=eager, so it graph-captures the EAGER prefill - it is NOT
+# the Inductor-fused analog of vLLM's FULL_AND_PIECEWISE. The true analog needs
+# --cuda-graph-tc-compiler inductor (see scripts/inductor_prefill_test.sh). The
+# graph A/B measured the eager-graph variant at LOADED rate (-1.5%); this measures
+# it at concurrency=1 (pure prefill, no queue), alone and combined with
+# --enable-torch-compile.
 #
 # Baselines (conc=1 p50): vLLM 132ms (full-reuse) / 485ms (cold);
 #                         SGLang stock 244 / 724.
