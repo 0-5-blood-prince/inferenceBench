@@ -76,6 +76,12 @@ false engine asymmetry.
   caching — Cold cache-off still +43%; not decode — ITL identical; not the
   prefill-graph disable — forcing it on moves TTFT −1.5% and the knee 0%; only
   ~⅓ multimodal). The whole effect is localized to the prefill/TTFT path
+- [official-bench-and-mechanism.md](learnings/measurement/official-bench-and-mechanism.md) —
+  validated the headline with SGLang's own `sglang.bench_serving` (vLLM +78% TTFT,
+  ITL identical; endpoint asymmetry ruled out), then an input-length sweep + a
+  vLLM `--enforce-eager` closer resolved the mechanism: NOT compilation at prefill
+  >=500 tok (vLLM-eager still ~1.9x faster than SGLang), it's the eager prefill-
+  forward KERNELS (~1.9x, MLP-dominated); compilation is only a short-sequence win
 - [validity-audit.md](learnings/measurement/validity-audit.md) — every
   experiment in the mechanism chain checked for isolation, confounds, config
   fidelity, and correctness; all valid, with the one gap (kernel-bench output
