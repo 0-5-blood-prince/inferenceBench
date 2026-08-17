@@ -38,9 +38,15 @@ SGLang stock 244 ms / vLLM 132 ms:
 |---|---|---|---|
 | SGLang stock | 244 ms | — | eager, Triton attention |
 | `--enable-torch-compile` | 244 ms | **0%** | only compiles the *decode* path; prefill untouched |
-| `--cuda-graph-backend-prefill tc_piecewise` | 257 ms | **+5% (worse)** | prefill graph capture **confirmed engaged** (231 s capture, `num_tokens=[4…8192]`) — launch-overhead removal doesn't help a compute-bound kernel |
+| `--cuda-graph-backend-prefill tc_piecewise` | 256 ms | **+5% (worse)** | prefill graph capture **confirmed engaged** (231 s capture, `num_tokens=[4…8192]`) — launch-overhead removal doesn't help a compute-bound kernel |
+| `--enable-torch-compile --cuda-graph-backend-prefill tc_piecewise` | 253 ms | **+4% (worse)** | compile + prefill graph together; still null |
 | `--attention-backend flashinfer` | rejected | — | Gemma-4 only supports trtllm_mha / triton / intel_xpu |
 | `--attention-backend fa3` | rejected | — | same rejection |
+
+The same variants on cold (uncached, purest prefill compute) tell the identical
+story against SGLang stock 724 ms: prefill graph 721 ms (**−0.4%**), compile +
+prefill graph 730 ms (**+1%**). Every lever is null within noise (±5%) on both
+workloads; n=2 each.
 
 Attention backend is **pinned to Triton** for Gemma-4: the model needs it for
 correct bidirectional image-token attention + interleaved sliding-window (SWA)
@@ -75,9 +81,11 @@ absent in decode (bandwidth-bound, ITL identical) and in the queue (symmetric),
 and is not reachable by any compilation, graph, or attention-backend config on
 SGLang v0.5.16.
 
-## What was not collectable
+## Coverage note
 
-`pfgraphc` (compile + prefill graph) and the cold-workload config variants did
-not complete — the sweep exited after the full-reuse cells and the flashinfer/fa3
-startup rejections. They would only reinforce the null: compile touches decode,
-prefill graph is launch-overhead not compute, and Triton is forced regardless.
+The one variant genuinely uncollectable is a *faster attention kernel*:
+FlashInfer/FA3 are refused at startup for Gemma-4, so there is no way to measure
+SGLang with a non-Triton prefill kernel on this model — which is exactly the
+lever the decomposition implicates. Everything that *can* be flipped
+(compilation, prefill CUDA graph, and their combination, on both full-reuse and
+cold) was measured and is null within ±5%.
