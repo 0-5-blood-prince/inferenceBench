@@ -1,0 +1,34 @@
+--- /Users/mabdul/inferenceBench/learnings/kernels/sglang/extend_attention.py	2026-08-16 19:26:25
++++ /Users/mabdul/inferenceBench/learnings/kernels/bench/extend_attention_patched.py	2026-08-16 20:16:46
+@@ -513,7 +513,16 @@
+         else tl.minimum(cur_seq_len_extend, (cur_block_m + 1) * BLOCK_M)
+     )
+     extend_end = 0 if SKIP_EXTEND else cur_block_m_end
+-    for start_n in range(0, extend_end, BLOCK_N):
++    # [PATCH a] Sliding-window loop LOWER bound. Keys older than
++    # (query - SLIDING_WINDOW_SIZE) are out of window for every row in this
++    # M-tile (smallest query index = cur_block_m*BLOCK_M), so never iterate them.
++    # Aligned down to BLOCK_N so the boundary tile is still visited & masked.
++    extend_start = 0
++    if SLIDING_WINDOW_SIZE > 0:
++        window_lo = cur_block_m * BLOCK_M - SLIDING_WINDOW_SIZE
++        window_lo = tl.maximum(window_lo, 0)
++        extend_start = (window_lo // BLOCK_N) * BLOCK_N
++    for start_n in range(extend_start, extend_end, BLOCK_N):
+         start_n = tl.multiple_of(start_n, BLOCK_N)
+         mask_n = (start_n + offs_n) < cur_block_m_end
+ 
+@@ -551,7 +560,12 @@
+             final_mask &= window_mask
+ 
+         SKIP_TILE = False
+-        if USE_CUSTOM_MASK or SLIDING_WINDOW_SIZE > 0:
++        # [PATCH b] Do NOT run the per-tile cross-warp reduction + data-dependent
++        # branch for the pure sliding-window path -- it defeats Triton's
++        # software-pipelining of K/V loads vs the matmuls. The window is still
++        # applied via `final_mask` (tl.where below); with the narrowed loop range
++        # from [PATCH a] no in-range tile is ever fully masked anyway.
++        if USE_CUSTOM_MASK:
+             SKIP_TILE = tl.max(tl.max(final_mask.to(tl.int32), axis=1), axis=0) == 0
+ 
+         if not SKIP_TILE:

@@ -51,14 +51,17 @@ correctness. One gap found and in remediation; everything else holds.
   real 50:10 SWA:full layer mix predicts **721 ms** vs **724 ms** observed cold
   prefill — near-exact. A microbench timing the *wrong* computation would not
   reproduce the end-to-end number to 3 ms. Strong indirect validity. ✓
-- **GAP FOUND → in remediation:** the completed bench **timed** the kernels but
-  never **asserted numerical correctness** (no `allclose`/reference check). The
-  721≈724 match is strong indirect evidence but not a substitute for verifying
-  outputs. **Remediation:** the Tier 1+2 run adds a "Correctness validation" table
-  — every kernel's output (vLLM, SGLang stock, FlashInfer, SDPA, patched) vs an
-  FA2/SDPA oracle at S=991 full + SWA, max/mean abs-diff, pass/fail — which
-  retroactively validates the original numbers. Until that lands, the kernel result
-  is **valid-with-strong-indirect-support, pending explicit output verification.**
+- **GAP FOUND → CLOSED.** The completed bench originally **timed** the kernels but
+  never **asserted numerical correctness**. The Tier 1+2 run
+  ([../kernels/bench/RESULTS_tier1_tier2.md](../kernels/bench/RESULTS_tier1_tier2.md),
+  `bench_correctness.py`) added a correctness table: **every kernel — vLLM
+  unified, SGLang stock, SGLang patched, FlashInfer, SDPA — passes vs an fp32-SDPA
+  oracle** (max-abs ~0.008 ≪ 0.02 tol) at S∈{991,2048}, both full and SWA. This
+  **retroactively validates the original RESULTS.md timings** (they were of correct
+  computations — no timing invalidated). The patched kernel is bitwise identical to
+  stock (max-abs = 0.0), so its 10.9× speedup is a pure valid win. **Gap closed —
+  kernel result now fully valid, and independently corroborated by the 721≈724
+  end-to-end prediction.**
 
 ## 5. Underlying baselines (corrected re-run, `rerun_clean.sh`)
 Already audited when produced: the four defects D1–D4 closed
@@ -76,7 +79,9 @@ numbers come from here. ✓
   a first-vs-second warmup effect is small relative to an 8× gap. Not material.
 
 ## Verdict
-All experiments are valid. The single gap — explicit numerical-correctness
-verification of the kernel bench — is being closed by the Tier 1+2 correctness
-cross-check; the conclusion it supports is independently corroborated by the
-721 ms ≈ 724 ms end-to-end prediction.
+**All experiments are valid.** The single gap — explicit numerical-correctness
+verification of the kernel bench — is now **closed**: all kernels pass vs an
+fp32-SDPA oracle, retroactively validating the original timings, and the patched
+kernel is bitwise-identical to stock. The conclusion is independently corroborated
+by the 721 ms ≈ 724 ms end-to-end prediction and by the patch (10.9× with
+identical output confirms the diagnosed root cause).

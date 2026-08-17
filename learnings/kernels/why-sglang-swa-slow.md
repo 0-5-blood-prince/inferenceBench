@@ -77,3 +77,30 @@ vLLM's) and not the `custom_mask` path (the bench ran `custom_mask=None`). It is
 specific, fixable inefficiency: SGLang's SWA handling adds a per-tile masking +
 `SKIP_TILE` reduction + data-dependent branch that defeats kernel pipelining, and
 never narrows the loop to the window.
+
+## Confirmed by patch — the diagnosis is exactly right
+
+A minimal patch making *only* the two edits above (`bench/patch_sglang_swa.py`,
+`bench/extend_attention_swa.patch`, both gated on `SLIDING_WINDOW_SIZE>0`) —
+(a) narrow the stage-2 loop lower bound to the window, (b) drop the per-tile
+`SKIP_TILE` reduction+branch — recovers essentially all of it:
+
+| S (SWA 1024) | stock ms | patched ms | speedup |
+|---:|---:|---:|---:|
+| 512 | 1.55 | 0.17 | 9.2× |
+| 991 | 5.39 | 0.50 | **10.9×** |
+| 2048 | 15.26 | 1.24 | 12.3× |
+
+**Output is bitwise identical to stock** (max-abs-diff = 0.000000; the patch only
+skips tiles that contribute exactly zero, so it reorders nothing) and matches the
+fp32-SDPA oracle to 0.0086 (< 1e-2). The full-causal path is untouched (1.00×).
+Patched SGLang SWA (0.50 ms @ S=991) is now **faster than vLLM (0.65) and bf16
+SDPA (0.52)** — from ~33× off the FlashInfer floor down to ~3×.
+
+### Reference floor (SWA, S=991, TFLOP/s)
+FlashInfer **197** (SGLang's own recommended A100 backend) > SDPA 62 > vLLM 50 >
+SGLang stock **6**. SGLang stock is ~33× off the floor; vLLM ~4×; the patch closes
+the SGLang gap to ~3×. Confirms both that the deficit is a fixable implementation
+detail and that Triton-on-A100 (the pinned backend) already sacrifices ~4× vs
+FlashInfer even for vLLM. (FlashAttention-2 unavailable — only a broken FA4 beta is
+installed; fp32-SDPA is the correctness oracle.)

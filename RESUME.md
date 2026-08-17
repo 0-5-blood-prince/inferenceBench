@@ -96,11 +96,21 @@ A chain of experiments, each ruling out a hypothesis, converging on the root cau
 | Different attention *algorithm* | No — both Triton |
 | **Triton kernel *implementation*** | **Yes — the root cause** |
 
+### Kernel comparison + fix (Tier 1+2, done)
+[learnings/kernels/bench/RESULTS_tier1_tier2.md](learnings/kernels/bench/RESULTS_tier1_tier2.md):
+- **Reference floor (SWA S=991, TFLOP/s):** FlashInfer 197 > SDPA 62 > vLLM 50 >
+  SGLang stock 6. SGLang stock is **~33× off the FlashInfer floor**; vLLM ~4×.
+- **The fix works:** a minimal patch (narrow loop to window + drop the SKIP_TILE
+  branch) gives **10.9× at S=991 with bitwise-identical output**, lifting SGLang
+  SWA from ~33× to ~3× off the floor — now faster than both vLLM and SDPA. Proves
+  the deficit is a fixable implementation detail. PR-able (`patch_sglang_swa.py`,
+  `extend_attention_swa.patch`).
+- **Correctness validated:** all kernels (vLLM, SGLang stock/patched, FlashInfer,
+  SDPA) pass vs an fp32-SDPA oracle — closes the one validity gap
+  ([validity-audit.md](learnings/measurement/validity-audit.md)).
+
 ### In flight / pending
-- **Kernel microbenchmark** — ✅ done ([learnings/kernels/bench/](learnings/kernels/bench/),
-  `RESULTS.md` + `bench_vllm.py` + `bench_sglang.py`). Result above: SWA kernel ~8×,
-  layer-weighted prediction matches observed to within 3 ms.
-- **Open option (not started):** rent an **H100** to test SGLang `trtllm_mha`
+- **Tier 3 (open):** rent an **H100** to test SGLang `trtllm_mha`
   (Hopper-only fused kernel, in Gemma-4's accepted list) vs its Triton — the one
   hardware experiment that could show a faster kernel closing the gap. Needs cost
   approval before renting.
