@@ -81,7 +81,9 @@ false engine asymmetry.
   ITL identical; endpoint asymmetry ruled out), then an input-length sweep + a
   vLLM `--enforce-eager` closer resolved the mechanism: NOT compilation at prefill
   >=500 tok (vLLM-eager still ~1.9x faster than SGLang), it's the eager prefill-
-  forward KERNELS (~1.9x, MLP-dominated); compilation is only a short-sequence win
+  forward KERNELS (~1.9x); compilation is only a short-sequence win. **Its original
+  "MLP-dominated" guess is corrected in-file: op-level profiling shows the pure-text
+  gap is attention-dominated (GEMM a wash) — see kernels/profiling-resolves-mechanism.md**
 - [validity-audit.md](learnings/measurement/validity-audit.md) — every
   experiment in the mechanism chain checked for isolation, confounds, config
   fidelity, and correctness; all valid, with the one gap (kernel-bench output
@@ -97,7 +99,10 @@ false engine asymmetry.
   layer-wise attribution table, and the one genuinely untested lever the sweep
   missed: an actual **Inductor-compiled** prefill (`--cuda-graph-tc-compiler
   inductor`), the true vLLM analog, since every prior "prefill graph" run used the
-  default `tc_compiler=eager`
+  default `tc_compiler=eager`. **Its SWA-kernel correction box is now re-scoped:
+  the patch is null on MULTIMODAL (root cause OPEN) but closes 88–98% of the
+  pure-TEXT prefill gap at the workload's real length — see
+  kernels/profiling-resolves-mechanism.md**
 - [rerun-defects.md](learnings/measurement/rerun-defects.md) — four defects
   found auditing the *finished* matrix (no restart between rate cells so Cold
   wasn't cold above 0.5κ; knee miscalibrated so only 0.5κ survived, at n=1;
@@ -108,6 +113,28 @@ false engine asymmetry.
   closing the gap against NVIDIA's standard LLM benchmarking metric set
   (token-counted TPS, TPS-per-user, RPS, ISL/OSL, image/text token split,
   KV-cache utilization)
+
+## [kernels/](learnings/kernels/) — the two Triton attention kernels
+
+- [README.md](learnings/kernels/README.md) — the two engines' Triton prefill
+  attention kernels (vLLM `unified_attention` vs SGLang `extend_attention_fwd`),
+  copied verbatim from the pinned versions for side-by-side reading, and why both
+  are walled off from compilation
+- [why-sglang-swa-slow.md](learnings/kernels/why-sglang-swa-slow.md) — the
+  source-level *why*: SGLang's sliding-window Triton kernel is ~8x slower on A100
+  (Ampere-conditioned) because it treats the window as a mask, not a loop bound,
+  and adds a per-tile `SKIP_TILE` reduction+branch that defeats software-pipelining;
+  a minimal patch fixes it (10.9x, bitwise-identical). End-to-end scope is
+  workload-dependent (see below)
+- [profiling-resolves-mechanism.md](learnings/kernels/profiling-resolves-mechanism.md) —
+  op-level torch-profiler traces of both engines' isolated prefill-forward window
+  (pure text, S=991) show attention is ~100% of the gap (GEMM a wash), correcting
+  the earlier "MLP-dominated" guess. Reconciles the apparent contradiction with the
+  0% multimodal patch result: the dominant patch fix is gated `if USE_CUSTOM_MASK:`,
+  so it never engages on multimodal (`USE_CUSTOM_MASK=True`) but fully engages on
+  pure text — where re-measurement confirms the patch closes the gap **88% at
+  ilen=991 / 98% at 2048** end-to-end. Multimodal root cause stays OPEN; extending
+  the fix under `USE_CUSTOM_MASK=True` is a noted future hypothesis, not a result
 
 ## [infrastructure/](learnings/infrastructure/) — the pod and the engines
 

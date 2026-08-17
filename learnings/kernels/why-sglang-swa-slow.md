@@ -88,16 +88,26 @@ never narrows the loop to the window.
 > H100 — so Triton is what runs on all pre-Blackwell GPUs. See
 > [bench/RESULTS_tier3_h100.md](bench/RESULTS_tier3_h100.md).
 
-## Confirmed by patch at the KERNEL level — but it does NOT translate end-to-end
+## Confirmed by patch at the KERNEL level — and end-to-end, but only on pure text
 
-> **⚠️ Scope: this section is a *kernel-isolation* result. The patch does NOT
-> improve end-to-end serving TTFT.** Installed into the live SGLang server
-> (marker-verified, caches purged), cold conc=1 stayed 721 ms vs stock 724 (full-
-> reuse 242 vs 244) — ~0% change. So while the kernel is genuinely ~8× slow in
-> isolation and the patch genuinely fixes *the kernel*, the SWA attention kernel is
-> **not** the end-to-end prefill bottleneck for this 31B model (attention is a small
-> share of prefill time at S=991). Treat everything below as a valid kernel
-> microbenchmark result, not an end-to-end fix.
+> **⚠️ Scope: the patch's end-to-end effect is workload-dependent.**
+> - **Multimodal (the study's core workload): null.** Installed into the live
+>   SGLang server (marker-verified, caches purged), cold conc=1 stayed 721 ms vs
+>   stock 724 (full-reuse 242 vs 244) — ~0% change. Reason, found later by reading
+>   the patch diff: the dominant fix (dropping the `SKIP_TILE` reduction+branch) is
+>   gated `if USE_CUSTOM_MASK:`, engaging only when `USE_CUSTOM_MASK` is **False**;
+>   Gemma-4 multimodal sets it **True** (bidirectional image-token masking), so the
+>   fix never engages there. The multimodal end-to-end driver remains **OPEN**.
+> - **Pure text (`custom_mask=None`, fix fully engaged): confirmed.** A
+>   torch-profiler trace shows attention is ~100% of the S=991 text-prefill gap, and
+>   installing the patch end-to-end closes the gap **88% at ilen=991** (the study's
+>   real prefill length; SGLang 612→374 ms vs vLLM 343) and **98% at 2048**.
+>
+> So the SWA kernel *is* the end-to-end driver on pure text and *is not* on
+> multimodal — the earlier blanket "does not translate end-to-end" was too broad.
+> Full breakdown + the patch-diff gating:
+> [profiling-resolves-mechanism.md](profiling-resolves-mechanism.md). The kernel
+> microbenchmark below is unchanged and valid regardless.
 
 A minimal patch making *only* the two edits above (`bench/patch_sglang_swa.py`,
 `bench/extend_attention_swa.patch`, both gated on `SLIDING_WINDOW_SIZE>0`) —

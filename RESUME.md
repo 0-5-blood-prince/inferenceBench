@@ -85,6 +85,21 @@ A chain of experiments, each ruling out a hypothesis, converging on the root cau
    the `custom_mask` path — it is a specific, *fixable* missing loop-bound
    optimization in SGLang's SWA kernel, unreachable by any SGLang flag (the faster
    backends are forbidden for Gemma-4 on A100).
+7. **End-to-end validation, then workload-scoping (the SWA conclusion is not blanket).**
+   Installing the patched kernel into the live server and re-running conc=1 on the
+   **multimodal** workload moved TTFT **~0%** (cold 721 vs 724). Reading the patch
+   diff explains why: its dominant fix (dropping the `SKIP_TILE` reduction+branch) is
+   gated `if USE_CUSTOM_MASK:` and only engages when `USE_CUSTOM_MASK` is **False**;
+   Gemma-4 multimodal sets it **True** (bidirectional image-token masking), so the
+   fix never engages there. On **pure text** (`custom_mask=None`) it fully engages:
+   an op-level torch-profiler trace shows attention is **~100%** of the S=991
+   text-prefill gap (GEMM a wash), and installing the patch end-to-end closes the gap
+   **88% at ilen=991** (SGLang 612→374 vs vLLM 343) and **98% at 2048**. So step 6's
+   "721 vs 724 layer-weighting" was a *multimodal* number and coincidental. **Net:
+   the SWA kernel is confirmed the driver for pure text but is null on the study's
+   multimodal workload, whose end-to-end root cause stays OPEN.** Extending the fix
+   to work under `USE_CUSTOM_MASK=True` is a future hypothesis, not a result. Full
+   detail: [learnings/kernels/profiling-resolves-mechanism.md](learnings/kernels/profiling-resolves-mechanism.md).
 
 ### Ruled out, with data
 | Hypothesis | Verdict |
@@ -94,7 +109,7 @@ A chain of experiments, each ruling out a hypothesis, converging on the root cau
 | Scheduler / queue | No — queue symmetric ≤6 ms |
 | Compilation / CUDA graphs | No — compile 0%, graph +3–5%, **Inductor +3%** |
 | Different attention *algorithm* | No — both Triton |
-| **Triton kernel *implementation*** | **Yes — the root cause** |
+| **Triton SWA kernel *implementation*** | **Root cause on pure TEXT (patch closes 88–98% e2e); null on MULTIMODAL (`USE_CUSTOM_MASK` gates the fix off) — that driver stays OPEN** |
 
 ### Kernel comparison + fix (Tier 1+2, done)
 [learnings/kernels/bench/RESULTS_tier1_tier2.md](learnings/kernels/bench/RESULTS_tier1_tier2.md):
@@ -117,8 +132,11 @@ A chain of experiments, each ruling out a hypothesis, converging on the root cau
 
 ### To resume P2
 Read [prefill-decomposition.md](learnings/measurement/prefill-decomposition.md)
-(the full chain + final verdict) and [learnings/kernels/](learnings/kernels/) (the
-two kernels + bench). All `decomp/*.json` are raw per-request data.
+(the full chain + verdict, with the re-scoped SWA correction box),
+[learnings/kernels/profiling-resolves-mechanism.md](learnings/kernels/profiling-resolves-mechanism.md)
+(the op-level profiling that resolved text-vs-multimodal scope), and
+[learnings/kernels/](learnings/kernels/) (the two kernels + bench). All
+`decomp/*.json` are raw per-request data.
 
 ---
 

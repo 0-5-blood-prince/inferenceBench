@@ -119,20 +119,29 @@ cold-prefill delta (724−485). This looked near-exact — **but a subsequent
 end-to-end test refuted it (see the correction box below); the match was a
 coincidence.**
 
-> ## ⚠️ CORRECTION: the SWA-kernel-as-root-cause conclusion is REFUTED end-to-end
-> Installing the patched kernel into the **live SGLang server** (marker-verified in
-> the engine log that the server imported it; `__pycache__`/Triton caches purged)
-> and re-running conc=1 changed end-to-end TTFT by **~0%**: cold 721 ms [715,727]
-> vs stock 724; full-reuse 242 vs 244. A stock-recheck reproduced ~244, so the
-> harness is sound. **A 10.9×-faster, bitwise-identical SWA kernel does not move
-> end-to-end TTFT** → the SWA attention kernel is *not* the end-to-end bottleneck,
-> and the "721≈724" layer-weighting above was coincidental (attention is a small
-> fraction of real prefill time at S=991 for a 31B model). What IS still valid: the
-> kernel is ~8× slower *in isolation* on A100 (Ampere-specific), and the patch fixes
-> *that*. What is now OPEN: the real driver of the end-to-end vLLM-vs-SGLang prefill
-> gap (candidates: the vision-encoder ViT forward on cold multimodal requests,
-> MLP/MoE compute, per-request framework/scheduler overhead at conc=1). Do not cite
-> the SWA kernel as the end-to-end cause.
+> ## ⚠️ CORRECTION, then RE-SCOPED: the SWA patch is workload-dependent
+> **First correction (multimodal, still stands):** installing the patched kernel
+> into the **live SGLang server** (marker-verified in the engine log that the server
+> imported it; `__pycache__`/Triton caches purged) and re-running conc=1 on the
+> **multimodal** workload changed end-to-end TTFT by **~0%**: cold 721 ms [715,727]
+> vs stock 724; full-reuse 242 vs 244 (stock-recheck reproduced ~244, harness sound).
+> So on the study's core **multimodal** comparison the SWA patch does not help, and
+> the "721≈724" layer-weighting above was coincidental — do **not** cite the SWA
+> kernel as the multimodal end-to-end cause; that root cause remains **OPEN**.
+>
+> **Re-scope (pure text — the blanket refutation was too broad):** the 0% result is
+> now explained mechanistically, and the SWA kernel *is* the driver on pure text.
+> The patch's dominant fix (dropping the `SKIP_TILE` reduction+branch) is gated
+> `if USE_CUSTOM_MASK:` — it only engages when `USE_CUSTOM_MASK` is **False**.
+> Gemma-4 multimodal sets `USE_CUSTOM_MASK=True` (bidirectional image-token masking),
+> so the fix **never engaged** on the multimodal test — hence 0%. On **pure text**
+> (`custom_mask=None`) it fully engages: a torch-profiler trace shows attention is
+> ~100% of the pure-text prefill gap (not a small fraction), and installing the patch
+> end-to-end against the pure-text workload closes the gap **88% at ilen=991** (the
+> study's real prefill length; SGLang 612→374 ms vs vLLM 343) and **98% at 2048**.
+> Full breakdown, tables, and the patch-diff gating:
+> [../kernels/profiling-resolves-mechanism.md](../kernels/profiling-resolves-mechanism.md).
+> The `~8×`-in-isolation, bitwise-identical kernel finding is unchanged.
 
 Root cause, from the source: vLLM truncates its tile loop to the window
 (`compute_tile_loop_bounds`), so sliding-window is *cheaper* than full. SGLang's
@@ -179,6 +188,17 @@ loop-bound optimization in one kernel), not a broad "SGLang/Triton is slow"
 result, and not reachable by any SGLang flag short of a backend the model forbids
 on this GPU. Earlier framings — "compilation/config", then "the whole Triton
 kernel" — were both too broad; it is specifically the SWA kernel's loop bound.
+
+> **Scope update (post-profiling — this verdict was written before the
+> multimodal refutation and its re-scoping; read it together with the correction
+> box above).** The verdict holds **for pure text**: a torch-profiler trace
+> confirms attention is ~100% of the S=991 text-prefill gap and the patch closes it
+> **88–98% end-to-end** ([../kernels/profiling-resolves-mechanism.md](../kernels/profiling-resolves-mechanism.md)).
+> It does **not** hold for the study's **multimodal** workload — there the same
+> patch is null because `USE_CUSTOM_MASK=True` gates the dominant fix off, and the
+> multimodal end-to-end driver remains **OPEN**. The "721 vs 724" layer-weighting
+> was a multimodal measurement and coincidental; do not read it as the multimodal
+> mechanism.
 
 ## Layer-wise attribution (hardware → request handling)
 

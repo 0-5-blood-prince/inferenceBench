@@ -70,10 +70,17 @@ The vLLM prefill-TTFT lead is **two effects**:
 2. **Long prefill → faster eager prefill-forward kernels** (~1.9×, *not* compilation):
    the dominant driver at our ~991-token workload. Both engines eager, vLLM still ~1.9×.
 
-This reconciles the SWA-kernel refutation: attention is a small fraction of the
-forward at S≈991, so the ~1.9× is the **whole eager forward kernel set**
-(MLP-dominated: gate/up/down projections, RMSNorm, q/k/v-norms, RoPE), where
-SGLang's kernels do ~2× the per-token work of vLLM's. The kernel-level SWA finding
-(8× isolation) is real but not the end-to-end cause. **What remains open** (not
-pursued): which specific non-attention kernels carry the ~1.9× — would need an
-op-level forward profile of each engine.
+> **CORRECTION (superseded by op-level profiling): the ≥500-tok gap is
+> attention-dominated, NOT MLP-dominated.** This section originally guessed the
+> ~1.9× was the "whole eager forward kernel set (MLP-dominated)" with attention a
+> small share — that was written before any op-level profile existed. A subsequent
+> torch-profiler trace of each engine's isolated prefill-forward window (pure text,
+> S=991) shows the opposite: **GEMM/MLP is a wash** (SGLang's is even marginally
+> faster, same kernel names, same call count) and the **entire ~237 ms kernel-time
+> gap is attention** (vLLM `kernel_unified_attention` 49 ms vs SGLang
+> `_fwd_kernel`+`_fwd_grouped_kernel_stage1` 298 ms, a ~249 ms delta). So the SWA
+> kernel finding is *not* separate from the eager-forward gap — on pure text it **is**
+> the gap, and the patch closes it 88–98% end-to-end. Full breakdown:
+> [../kernels/profiling-resolves-mechanism.md](../kernels/profiling-resolves-mechanism.md).
+> (Scope: this is the pure-text mechanism; on the multimodal workload the SWA patch
+> is null via `USE_CUSTOM_MASK` gating and the driver stays open — see that file.)
