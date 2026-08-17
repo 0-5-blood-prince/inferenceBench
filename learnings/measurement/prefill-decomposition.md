@@ -40,7 +40,7 @@ SGLang stock 244 ms / vLLM 132 ms:
 | `--enable-torch-compile` | 244 ms | **0%** | only compiles the *decode* path; prefill untouched |
 | `--cuda-graph-backend-prefill tc_piecewise` | 256 ms | **+5% (worse)** | graph capture confirmed (231 s, `num_tokens=[4…8192]`) — but **default `tc_compiler=eager`**: this captures a graph of the *eager* prefill, **not** Inductor-compiled (see below) |
 | `--enable-torch-compile --cuda-graph-backend-prefill tc_piecewise` | 253 ms | **+4% (worse)** | still `tc_compiler=eager`; `--enable-torch-compile` only touches decode, so this is again graph-of-eager |
-| `--cuda-graph-backend-prefill tc_piecewise --cuda-graph-tc-compiler inductor` | *measuring* | — | the **real vLLM analog** (Inductor-fused + graph); see next section |
+| `--cuda-graph-backend-prefill tc_piecewise --cuda-graph-tc-compiler inductor` | 252 ms | **+3% (null)** | the **real vLLM analog** (Inductor genuinely engaged — 414 s compile vs 231 s eager); still null. See next section |
 | `--attention-backend flashinfer` | rejected | — | Gemma-4 only supports trtllm_mha / triton / intel_xpu |
 | `--attention-backend fa3` | rejected | — | same rejection |
 
@@ -71,8 +71,35 @@ force-disabled (the force-to-`eager` path is NPU/Ascend-only,
 measured now (`scripts/inductor_prefill_test.sh`) and the result decides the
 verdict below.
 
-> **Result (Inductor-compiled prefill, conc=1):** _pending — measuring on the
-> pod; will report full-reuse & cold vs vLLM 132/485 and SGLang stock 244/724._
+> **Result (Inductor-compiled prefill, conc=1):** **null on both workloads.**
+> full-reuse 252 ms [257, 246] (vs stock 244 = **+3%**, vs vLLM 132 = +91%);
+> cold 747 ms (vs stock 724 = **+3%**, vs vLLM 485 = +54%). Inductor was genuinely
+> engaged (startup capture: `tc_compiler='inductor'`, 414 s compile vs 231 s for
+> eager), and the ~991-token shape does not fall back to eager (`can_run` returns
+> `True` unconditionally; `replay` always calls the compiled `_compiled_fn`; no
+> fallback/recompile logged in the measured window). So this is a valid measurement
+> of the real Inductor-compiled prefill — and it does **not** close the gap.
+
+### Why Inductor can't help: the attention kernel is walled off by design
+
+The reason is structural, confirmed at the source level. Both engines keep the
+attention **kernel** outside compilation:
+- SGLang: `self.extend_attention_fwd = torch.compiler.disable(extend_attention_fwd)`
+  (`triton_backend.py:137`) — explicitly excluded from torch.compile/Inductor.
+- vLLM: `unified_attention` is in `splitting_ops`, split out of the Inductor graph.
+
+Inductor only ever fuses the *surrounding* ops (RMSNorm, RoPE, q/k/v-norms, MLP);
+the attention kernel is untouched in both. So no compilation lever can change it.
+And "both use Triton" does **not** mean the same kernel — vLLM's `unified_attention`
+(`triton_unified_attention.py`) and SGLang's `extend_attention_fwd`
+(`extend_attention.py`) are two independent Triton implementations (copied to
+[../kernels/](../kernels/)). vLLM applies causal + sliding-window **in-kernel**;
+SGLang's extend kernel takes a materialized **`custom_mask`** (general masked path).
+The only config that could swap the kernel is the attention *backend*
+(flash/flashinfer/fa3/trtllm_mha), and Gemma-4 rejects all flash-family backends on
+A100 (trtllm_mha needs Hopper+). Published data agrees: FA2-CUDA is ~1.3–1.5× faster
+than Triton-FA on A100, and SGLang's docs recommend FlashInfer over Triton on
+Ampere. A direct kernel-level benchmark is in [../kernels/bench/](../kernels/).
 
 Attention backend is **pinned to Triton for Gemma-4 on *both* engines** — a
 correction to an earlier assumption that vLLM used FlashAttention here. Verified
@@ -88,20 +115,21 @@ the whole Gemma-4 family, **including the text-only `Gemma4ForCausalLM`**
 kernel on this model, and the difference is *not* a different attention
 algorithm.
 
-**Verdict (partial, pending the Inductor result above): the gap lives *within*
-the Triton attention family, not FA-vs-Triton.** Both engines run Triton
-attention; vLLM splits it out of the graph and fuses everything around it
-(RMSNorm, RoPE, Gemma-4's q/k/v-norms, MLP) via Inductor under a
-`FULL_AND_PIECEWISE` CUDA graph, while SGLang stock runs prefill **eager**. What
-is now firmly established: neither a different attention algorithm (both Triton),
-nor caching, nor decode, nor the queue explains it; and *graph-capturing the
-eager prefill* does not help. What remains open until the Inductor-prefill run
-lands: whether SGLang's eager prefill can be Inductor-compiled to close the gap
-(making it a config difference), or whether it stays ~244 ms even Inductor-fused
-(making it the Triton **kernel implementation** itself, vLLM's TRITON_ATTN vs
-SGLang's, plus fusion that Inductor can't recover). The earlier flat claim that
-"forcing SGLang's compile/graph on is null → genuine limitation, not config" was
-**overstated**: it only covered the eager-compiler path.
+**Verdict (final): the gap is the Triton attention *kernel implementation*
+itself, not compilation, fusion, caching, decode, or the queue.** Ruled out with
+data: different attention *algorithm* (both run Triton), caching (cold cache-off
++43–49%), decode (ITL identical), queue (symmetric ≤6 ms), and — now including the
+genuine Inductor-compiled prefill — *every* SGLang compilation lever (compile 0%,
+graph-of-eager +3–5%, Inductor-compiled +3%). The attention kernel is walled off
+from compilation by design in both engines (`torch.compiler.disable` / `splitting_ops`),
+so no compilation config can touch it, and the flash-family backends that would
+swap the kernel are architecturally rejected for Gemma-4 on A100. What remains is
+two independent Triton kernels where SGLang's `extend_attention_fwd` (general
+`custom_mask` path) runs the same prefill ~1.5–1.9× slower than vLLM's
+`unified_attention` (in-kernel causal+SWA). This IS a genuine SGLang v0.5.16
+limitation for this model on A100 — but the earlier framing that pinned it on
+"compilation/config" was wrong: it is the kernel, and it is not reachable by any
+SGLang flag short of a backend the model forbids on this GPU.
 
 ## Layer-wise attribution (hardware → request handling)
 
