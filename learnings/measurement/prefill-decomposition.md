@@ -93,13 +93,42 @@ the attention kernel is untouched in both. So no compilation lever can change it
 And "both use Triton" does **not** mean the same kernel — vLLM's `unified_attention`
 (`triton_unified_attention.py`) and SGLang's `extend_attention_fwd`
 (`extend_attention.py`) are two independent Triton implementations (copied to
-[../kernels/](../kernels/)). vLLM applies causal + sliding-window **in-kernel**;
-SGLang's extend kernel takes a materialized **`custom_mask`** (general masked path).
-The only config that could swap the kernel is the attention *backend*
-(flash/flashinfer/fa3/trtllm_mha), and Gemma-4 rejects all flash-family backends on
-A100 (trtllm_mha needs Hopper+). Published data agrees: FA2-CUDA is ~1.3–1.5× faster
-than Triton-FA on A100, and SGLang's docs recommend FlashInfer over Triton on
-Ampere. A direct kernel-level benchmark is in [../kernels/bench/](../kernels/).
+[../kernels/](../kernels/)). The only config that could swap the kernel is the
+attention *backend* (flash/flashinfer/fa3/trtllm_mha), and Gemma-4 rejects all
+flash-family backends on A100 (trtllm_mha needs Hopper+). A direct kernel-level
+benchmark ([../kernels/bench/](../kernels/bench/)) pins down *which* kernel and
+*why* — see below.
+
+### Kernel-level confirmation: it is the sliding-window kernel specifically
+
+Microbenchmark of the two kernels head-to-head on the A100 (cold self-attention,
+prefix_len=0, bf16, batch=1, median of 60; ratio = SGLang/vLLM latency):
+
+| S | full-causal (SGLang/vLLM) | sliding-window 1024 (SGLang/vLLM) |
+|---:|---:|---:|
+| 512 | **0.76×** (SGLang faster) | **7.4×** (SGLang slower) |
+| 991 | **0.76×** | **8.3×** |
+| 2048 | **0.72×** | **8.1×** |
+
+The surprise: SGLang's **full-causal** kernel is ~1.3× *faster* than vLLM's. Its
+**sliding-window** kernel is ~8× *slower*. Gemma-4 is **50 sliding + 10 full
+attention layers (5:1)**, so the SWA weakness dominates. Weighting the S=991
+per-layer medians by the real 50:10 mix gives attention-only totals of vLLM
+36.7 ms vs SGLang 272.9 ms — a **236 ms predicted delta vs the 239 ms observed**
+cold-prefill delta (724−485). Near-exact: the SWA kernel accounts for essentially
+the entire gap.
+
+Root cause, from the source: vLLM truncates its tile loop to the window
+(`compute_tile_loop_bounds`), so sliding-window is *cheaper* than full. SGLang's
+extend kernel never truncates the stage-2 loop range — it iterates the full causal
+extent and only *masks*, plus a per-tile cross-warp `SKIP_TILE` reduction. Smoking
+gun: at S=991 ≤ window 1024 the window masks nothing, yet SGLang is **17× slower
+than its own full-causal path** (5.39 vs 0.32 ms) — pure loop/masking overhead,
+not extra compute. So this is not "Triton is slow on A100" (SGLang's causal Triton
+beats vLLM's) and not the `custom_mask` path (this ran `custom_mask=None`): it is a
+specific missing loop-bound optimization in SGLang's sliding-window Triton kernel —
+a fixable inefficiency, not a hardware or algorithm limit. (Published data that
+FA2-CUDA > Triton-FA on A100 is a red herring here; the split is kernel-specific.)
 
 Attention backend is **pinned to Triton for Gemma-4 on *both* engines** — a
 correction to an earlier assumption that vLLM used FlashAttention here. Verified
@@ -123,13 +152,17 @@ genuine Inductor-compiled prefill — *every* SGLang compilation lever (compile 
 graph-of-eager +3–5%, Inductor-compiled +3%). The attention kernel is walled off
 from compilation by design in both engines (`torch.compiler.disable` / `splitting_ops`),
 so no compilation config can touch it, and the flash-family backends that would
-swap the kernel are architecturally rejected for Gemma-4 on A100. What remains is
-two independent Triton kernels where SGLang's `extend_attention_fwd` (general
-`custom_mask` path) runs the same prefill ~1.5–1.9× slower than vLLM's
-`unified_attention` (in-kernel causal+SWA). This IS a genuine SGLang v0.5.16
-limitation for this model on A100 — but the earlier framing that pinned it on
-"compilation/config" was wrong: it is the kernel, and it is not reachable by any
-SGLang flag short of a backend the model forbids on this GPU.
+swap the kernel are architecturally rejected for Gemma-4 on A100. The kernel
+benchmark localizes it precisely: **SGLang's sliding-window Triton kernel is ~8×
+slower than vLLM's because it does not truncate its tile loop to the window**,
+while its full-causal kernel is actually faster; since 50/60 Gemma-4 layers are
+sliding-window, that one kernel drives essentially the entire gap (layer-weighted
+prediction 721 ms vs 724 ms observed). This IS a genuine SGLang v0.5.16
+limitation for this model on A100 — but note it is *narrow and fixable* (a missing
+loop-bound optimization in one kernel), not a broad "SGLang/Triton is slow"
+result, and not reachable by any SGLang flag short of a backend the model forbids
+on this GPU. Earlier framings — "compilation/config", then "the whole Triton
+kernel" — were both too broad; it is specifically the SWA kernel's loop bound.
 
 ## Layer-wise attribution (hardware → request handling)
 

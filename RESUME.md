@@ -72,15 +72,19 @@ A chain of experiments, each ruling out a hypothesis, converging on the root cau
    `--cuda-graph-tc-compiler inductor` (Inductor-compiled prefill). Measured:
    full-reuse **252 (+3%)**, cold **747 (+3%)** — Inductor genuinely engaged
    (414 s compile), still **null**.
-6. **Root cause (final verdict).** The attention *kernel* is walled off from
-   compilation in both engines (`torch.compiler.disable` in SGLang, `splitting_ops`
-   in vLLM), so no compilation lever can touch it. "Both Triton" ≠ same kernel:
-   they are two independent implementations — SGLang's `extend_attention_fwd`
-   (general materialized `custom_mask` path) vs vLLM's `unified_attention`
-   (in-kernel causal+SWA). **The gap is the Triton kernel implementation itself**,
-   ~1.5–1.9×, unreachable by any SGLang flag; the faster backends are forbidden
-   for Gemma-4 on A100. Published data agrees (FA2-CUDA ~1.3–1.5× > Triton-FA on
-   A100; SGLang docs recommend FlashInfer over Triton on Ampere).
+6. **Root cause (final, kernel-benchmarked).** The attention *kernel* is walled
+   off from compilation in both engines (`torch.compiler.disable` / `splitting_ops`),
+   so no compilation lever can touch it. A head-to-head kernel microbench
+   ([learnings/kernels/bench/](learnings/kernels/bench/)) localized it precisely:
+   SGLang's **full-causal** Triton kernel is ~1.3× *faster* than vLLM's, but its
+   **sliding-window(1024)** kernel is **~8× slower** — because vLLM truncates its
+   tile loop to the window (`compute_tile_loop_bounds`) while SGLang iterates the
+   full causal extent and only masks. Gemma-4 is **50 sliding + 10 full layers
+   (5:1)**, so that one kernel dominates: layer-weighted prediction **721 ms vs
+   724 ms observed** (cold). So it is **not** "Triton is slow on A100" and **not**
+   the `custom_mask` path — it is a specific, *fixable* missing loop-bound
+   optimization in SGLang's SWA kernel, unreachable by any SGLang flag (the faster
+   backends are forbidden for Gemma-4 on A100).
 
 ### Ruled out, with data
 | Hypothesis | Verdict |
@@ -93,10 +97,9 @@ A chain of experiments, each ruling out a hypothesis, converging on the root cau
 | **Triton kernel *implementation*** | **Yes — the root cause** |
 
 ### In flight / pending
-- **Kernel microbenchmark** (subagent, running on the pod): head-to-head timing of
-  the two Triton kernels at Gemma-4 shapes → `learnings/kernels/bench/`
-  (`bench_vllm.py`, `bench_sglang.py`, `RESULTS.md`). Will give the direct
-  kernel-level ratio to confirm the ~1.5–1.9× end-to-end gap.
+- **Kernel microbenchmark** — ✅ done ([learnings/kernels/bench/](learnings/kernels/bench/),
+  `RESULTS.md` + `bench_vllm.py` + `bench_sglang.py`). Result above: SWA kernel ~8×,
+  layer-weighted prediction matches observed to within 3 ms.
 - **Open option (not started):** rent an **H100** to test SGLang `trtllm_mha`
   (Hopper-only fused kernel, in Gemma-4's accepted list) vs its Triton — the one
   hardware experiment that could show a faster kernel closing the gap. Needs cost
