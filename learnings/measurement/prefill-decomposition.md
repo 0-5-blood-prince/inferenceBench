@@ -67,11 +67,14 @@ this model, not a default-config artifact — and it lives *within* the Triton
 attention family, not FA-vs-Triton.** Both engines run Triton attention; vLLM
 splits it out of the graph and fuses everything around it (RMSNorm, RoPE,
 Gemma-4's q/k/v-norms, MLP) via Inductor under a `FULL_AND_PIECEWISE` CUDA graph,
-while SGLang runs prefill eager: `--enable-torch-compile` is capped to small
-(decode) batch sizes and never reaches the ~991-token prefill, and the prefill
-CUDA graph is disabled. Forcing SGLang's compile/graph on is null (above) because
-compile doesn't reach prefill batch sizes and the graph only removes launch
-overhead a compute-bound prefill doesn't pay. The operative difference is
+while SGLang runs prefill eager: `--enable-torch-compile` targets SGLang's
+*decode* forward (governed by `torch_compile_max_bs=32`, verified in the server
+args), not the prefill/extend forward, and the prefill CUDA graph is disabled by
+default for this multimodal model. Prefill compilation is a *separate* path
+(`--cuda-graph-backend-prefill tc_piecewise`) — which is exactly what pfgraph /
+pfgraphc tested, and it is null/worse (above): a graph only removes launch
+overhead a compute-bound prefill doesn't pay, and enabling compile on top adds
+nothing to prefill. The operative difference is
 vLLM's Inductor-fused, graph-captured prefill stack (and its TRITON_ATTN kernel
 implementation) vs SGLang's eager Triton prefill stack.
 
