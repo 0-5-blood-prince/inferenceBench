@@ -76,6 +76,10 @@ false engine asymmetry.
   caching — Cold cache-off still +43%; not decode — ITL identical; not the
   prefill-graph disable — forcing it on moves TTFT −1.5% and the knee 0%; only
   ~⅓ multimodal). The whole effect is localized to the prefill/TTFT path
+- [validity-audit.md](learnings/measurement/validity-audit.md) — every
+  experiment in the mechanism chain checked for isolation, confounds, config
+  fidelity, and correctness; all valid, with the one gap (kernel-bench output
+  verification) in remediation
 - [prefill-decomposition.md](learnings/measurement/prefill-decomposition.md) —
   the prefill-vs-queue split rerun-results deferred, now done: at concurrency=1
   (no queue) SGLang's prefill compute alone is +85% (full reuse) / +49% (cold),
