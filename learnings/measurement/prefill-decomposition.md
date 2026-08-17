@@ -115,8 +115,24 @@ The surprise: SGLang's **full-causal** kernel is ~1.3× *faster* than vLLM's. It
 attention layers (5:1)**, so the SWA weakness dominates. Weighting the S=991
 per-layer medians by the real 50:10 mix gives attention-only totals of vLLM
 36.7 ms vs SGLang 272.9 ms — a **236 ms predicted delta vs the 239 ms observed**
-cold-prefill delta (724−485). Near-exact: the SWA kernel accounts for essentially
-the entire gap.
+cold-prefill delta (724−485). This looked near-exact — **but a subsequent
+end-to-end test refuted it (see the correction box below); the match was a
+coincidence.**
+
+> ## ⚠️ CORRECTION: the SWA-kernel-as-root-cause conclusion is REFUTED end-to-end
+> Installing the patched kernel into the **live SGLang server** (marker-verified in
+> the engine log that the server imported it; `__pycache__`/Triton caches purged)
+> and re-running conc=1 changed end-to-end TTFT by **~0%**: cold 721 ms [715,727]
+> vs stock 724; full-reuse 242 vs 244. A stock-recheck reproduced ~244, so the
+> harness is sound. **A 10.9×-faster, bitwise-identical SWA kernel does not move
+> end-to-end TTFT** → the SWA attention kernel is *not* the end-to-end bottleneck,
+> and the "721≈724" layer-weighting above was coincidental (attention is a small
+> fraction of real prefill time at S=991 for a 31B model). What IS still valid: the
+> kernel is ~8× slower *in isolation* on A100 (Ampere-specific), and the patch fixes
+> *that*. What is now OPEN: the real driver of the end-to-end vLLM-vs-SGLang prefill
+> gap (candidates: the vision-encoder ViT forward on cold multimodal requests,
+> MLP/MoE compute, per-request framework/scheduler overhead at conc=1). Do not cite
+> the SWA kernel as the end-to-end cause.
 
 Root cause, from the source: vLLM truncates its tile loop to the window
 (`compute_tile_loop_bounds`), so sliding-window is *cheaper* than full. SGLang's
